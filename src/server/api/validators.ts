@@ -1,0 +1,133 @@
+import { z } from 'zod';
+import { PLATFORMS } from '../../shared/platforms.ts';
+import { STAGES, type PlatformId, type Stage } from '../../shared/types.ts';
+
+// Cast to a tuple so zod infers the literal union rather than widening to string.
+export const PlatformEnum = z.enum(PLATFORMS.map((p) => p.id) as [PlatformId, ...PlatformId[]]);
+export const ModeEnum = z.enum(['copilot', 'autopilot']);
+export const StageEnum = z.enum(STAGES as [Stage, ...Stage[]]);
+export const StateEnum = z.enum(['active', 'paused', 'handoff', 'opted_out', 'closed']);
+
+const text = (max: number) => z.string().max(max);
+const id = z.string().min(1).max(80);
+const nullableId = z.union([id, z.null()]);
+
+/** A URL the AI may send. http(s) only: a javascript: or data: URL in a message is never legitimate. */
+export const HttpUrl = z
+  .string()
+  .max(500)
+  .refine((v) => {
+    try {
+      return ['http:', 'https:'].includes(new URL(v).protocol);
+    } catch {
+      return false;
+    }
+  }, '必须是 http(s) 链接');
+
+export const ProviderInput = z.object({
+  name: text(80).min(1),
+  kind: z.enum(['anthropic', 'openai_compat', 'gemini', 'mock']),
+  baseUrl: z.union([HttpUrl, z.literal('')]).default(''),
+  model: text(120).min(1),
+  /** Raw key, or a reference (env:… / keychain:… / secret:…). Never echoed back. */
+  apiKey: text(4000).optional(),
+  temperature: z.number().min(0).max(2).nullable().default(null),
+  maxTokens: z.number().int().min(64).max(200_000).default(4000),
+  effort: z.enum(['low', 'medium', 'high']).nullable().default(null),
+  jsonMode: z.boolean().default(true),
+  timeoutMs: z.number().int().min(1000).max(600_000).default(90_000),
+  priceIn: z.number().min(0).max(10_000).nullable().default(null),
+  priceOut: z.number().min(0).max(10_000).nullable().default(null),
+  dailyTokenLimit: z.number().int().min(0).nullable().default(null),
+  enabled: z.boolean().default(true),
+  priority: z.number().int().min(0).max(10_000).default(100),
+});
+
+export const PersonaInput = z.object({
+  name: text(60).min(1),
+  identity: text(2000).min(1),
+  style: text(2000).default(''),
+  disclosure: text(500).default(''),
+  commentSignature: text(200).default(''),
+});
+
+export const SkillInput = z.object({
+  slug: z
+    .string()
+    .min(2)
+    .max(60)
+    .regex(/^[a-z0-9][a-z0-9-]*$/, '只能用小写字母、数字和短横线'),
+  name: text(80).min(1),
+  description: text(300).default(''),
+  content: text(20_000).min(1),
+  allowedPlatforms: z.array(PlatformEnum).max(20).default([]),
+  enabled: z.boolean().default(true),
+});
+
+export const CampaignInput = z.object({
+  name: text(80).min(1),
+  goalType: z.enum(['rapport', 'recommend_product', 'share_content', 'schedule_meeting', 'support', 'custom']),
+  goal: text(2000).min(1),
+  successCriteria: text(1000).default(''),
+  facts: text(20_000).default(''),
+  allowedLinks: z.array(HttpUrl).max(20).default([]),
+  linkFallback: text(300).default(''),
+  allowedPlatforms: z.array(PlatformEnum).max(20).default([]),
+  skillIds: z.array(id).max(30).default([]),
+  personaId: nullableId.default(null),
+  providerIds: z.array(id).max(10).default([]),
+  mode: ModeEnum.default('copilot'),
+  maxDays: z.number().int().min(1).max(365).default(7),
+  maxTurns: z.number().int().min(1).max(500).default(30),
+  replyDelayMinS: z.number().int().min(0).max(86_400).default(8),
+  replyDelayMaxS: z.number().int().min(0).max(86_400).default(25),
+  followupEnabled: z.boolean().default(false),
+  followupAfterH: z.number().int().min(1).max(720).default(24),
+  followupMax: z.number().int().min(0).max(3).default(1),
+  enabled: z.boolean().default(true),
+});
+
+const HHMM = z.string().regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/, '时间必须在 00:00 到 23:59 之间');
+
+export const AccountInput = z.object({
+  name: text(80).min(1),
+  platform: PlatformEnum,
+  connector: z.enum(['sandbox', 'manual', 'webhook', 'youtube', 'x', 'instagram', 'wechat_oa', 'wecom_kf']),
+  config: z.record(z.string().max(60), z.string().max(2000)).default({}),
+  /** field → raw value or reference. '' deletes the stored secret. Never echoed back. */
+  secrets: z.record(z.string().max(60), z.string().max(8000)).default({}),
+  personaId: nullableId.default(null),
+  defaultCampaignId: nullableId.default(null),
+  status: z.enum(['active', 'paused']).optional(),
+  quietStart: HHMM.default('23:00'),
+  quietEnd: HHMM.default('08:00'),
+  timezone: text(60).default('Asia/Shanghai'),
+  maxPerHour: z.number().int().min(0).max(100_000).default(30),
+  maxPerDay: z.number().int().min(0).max(1_000_000).default(200),
+  maxPerContactDay: z.number().int().min(0).max(100_000).default(20),
+  pollIntervalS: z.number().int().min(0).max(86_400).default(120),
+});
+
+export const SettingsInput = z
+  .object({
+    autopilotPaused: z.boolean(),
+    debounceMs: z.number().int().min(0).max(600_000),
+    pauseOnOperatorReply: z.boolean(),
+    optOutAck: z.boolean(),
+    maxContextMessages: z.number().int().min(4).max(200),
+    summarizeEvery: z.number().int().min(0).max(500),
+    dailyLlmCallLimit: z.number().int().min(0).max(1_000_000),
+    retentionDays: z.number().int().min(0).max(3650),
+    ocrEngine: z.enum(['auto', 'vision', 'off']),
+  })
+  .partial();
+
+export const SimInput = z.object({
+  campaignId: id,
+  agentProviderId: nullableId.default(null),
+  contactProviderId: nullableId.default(null),
+  persona: z.object({ name: text(60).min(1), description: text(2000).default(''), language: text(20).default('zh-Hans') }),
+  maxTurns: z.number().int().min(1).max(30).default(8),
+});
+
+export const MessageText = z.string().trim().min(1, '消息不能为空').max(8000);
