@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DEFAULT_MY_NAMES, parseChatText } from '../../shared/chatText.ts';
 import type { Account, CompareCandidate, ConversationDetail, ConversationListItem, LlmCall, Message, ParsedChatMessage } from '../../shared/types.ts';
 import type { LlmCallSummary } from '../api.ts';
 import { navigate, useRoute } from '../route.ts';
@@ -425,6 +426,7 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
   const [name, setName] = useState(existing?.contact.displayName ?? '');
   const [userId, setUserId] = useState(existing?.contact.platformUserId ?? '');
   const [rows, setRows] = useState<ParsedChatMessage[]>([]);
+  const [pasted, setPasted] = useState('');
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   // 截图识别不是每台机器都有。别让人选完文件才从报错里知道。
@@ -445,6 +447,15 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
     } finally {
       setBusy(false);
     }
+  };
+
+  const addPasted = () => {
+    const accountName = manual.find((a) => a.id === accountId)?.name ?? '';
+    const parsed = parseChatText(pasted, { contactName: name.trim(), myNames: [...DEFAULT_MY_NAMES, accountName] });
+    if (parsed.length === 0) { toast.info('没解析出内容，看看是不是粘错了。'); return; }
+    if (rows.length + parsed.length > 100) { toast.error('每次最多导入 100 条消息，请分批导入'); return; }
+    setRows((prev) => [...prev, ...parsed]);
+    setPasted('');
   };
 
   const submit = async () => {
@@ -504,6 +515,14 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
         <input type="file" accept="image/*" multiple disabled={busy || ocrOff} onChange={(e) => Array.from(e.target.files ?? []).reduce<Promise<void>>((p, f) => p.then(() => onFile(f)), Promise.resolve())} />
       </Field>
       {busy ? <div className="small muted">识别中…</div> : null}
+      <Field label="粘贴聊天文字" hint="每行一条。我方的行用「我：」开头，或者解析完再逐条切换；微信电脑版复制出来的「名字 10:23」抬头也认。">
+        <textarea rows={4} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder={'小王：在吗\n我：在的，什么事'} />
+      </Field>
+      <div className="row-tight">
+        <button className="sm" disabled={pasted.trim() === ''} onClick={addPasted}>
+          解析并添加
+        </button>
+      </div>
       <div className="stack" style={{ gap: 6 }}>
         {rows.map((row, i) => (
           <div key={i} className="row-tight">

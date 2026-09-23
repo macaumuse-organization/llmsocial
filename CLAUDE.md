@@ -45,7 +45,7 @@ npm run dev     # 本地起服务
 ## 目录
 
 ```
-src/shared/     server 与 web 共用的类型、平台参数表
+src/shared/     types(共用类型) platforms(平台参数表) chatText(粘贴文字解析，server 与 web 共用，不能反向 import server)
 src/server/
   agent/        pipeline(核心状态机) guards(确定性护栏) prompt schema similarity simulator
   llm/          router(后备链+熔断+限额) anthropic openaiCompat gemini mock
