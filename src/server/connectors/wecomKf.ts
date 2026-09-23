@@ -1,5 +1,5 @@
 import { apiJson, ConnectorError } from './types.ts';
-import type { Connector, ConnectorContext, InboundMessage, SendRequest, SendResult, WebhookRequest, WebhookResponse } from './types.ts';
+import type { Connector, ConnectorContext, InboundMessage, InboundSignal, SendRequest, SendResult, WebhookRequest, WebhookResponse } from './types.ts';
 import { parseFlatXml, wxDecrypt, wxVerify } from './wxcrypto.ts';
 
 /**
@@ -35,6 +35,7 @@ interface KfMsg {
   servicer_userid?: string;
   msgtype?: string;
   text?: { content?: string };
+  event?: { event_type?: string; external_userid?: string; scene?: string };
 }
 
 interface SyncMsgResult extends ApiResult {
@@ -169,11 +170,25 @@ function toInbound(m: KfMsg, floorMs: number): InboundMessage | null {
  * The very first sync only admits the last 24 hours: sync_msg without a cursor replays the platform's whole
  * retention window, and backfilling months of history into a fresh inbox is never what the operator wants.
  */
-async function syncMessages(ctx: ConnectorContext, openKfId: string, eventToken: string): Promise<InboundMessage[]> {
+/**
+ * Someone opened the customer-service chat from a link. A lead only: WeCom hands back a
+ * welcome_code good for one greeting, and the 48-hour window still needs them to write first.
+ */
+function toSignal(m: KfMsg, floorMs: number): InboundSignal | null {
+  if (m.msgtype !== 'event' || m.event?.event_type !== 'enter_session') return null;
+  const externalUserId = typeof m.event.external_userid === 'string' ? m.event.external_userid : '';
+  const msgid = typeof m.msgid === 'string' ? m.msgid : '';
+  const timestamp = typeof m.send_time === 'number' && m.send_time > 0 ? m.send_time * 1000 : 0;
+  if (externalUserId === '' || msgid === '' || timestamp === 0 || timestamp < floorMs) return null;
+  return { kind: 'enter_session', platformUserId: externalUserId.slice(0, 200), text: m.event.scene ? `来源场景：${m.event.scene}`.slice(0, 200) : '', ref: msgid.slice(0, 200), timestamp };
+}
+
+async function syncMessages(ctx: ConnectorContext, openKfId: string, eventToken: string): Promise<{ messages: InboundMessage[]; signals: InboundSignal[] }> {
   const start = readCursor(ctx);
   const firstSync = start.syncCursor === '';
   const floorMs = firstSync ? ctx.now() - FIRST_SYNC_WINDOW_MS : 0;
   const out: InboundMessage[] = [];
+  const signals: InboundSignal[] = [];
   let cursor = start.syncCursor;
 
   for (let round = 0; round < MAX_SYNC_ROUNDS; round += 1) {
@@ -187,7 +202,7 @@ async function syncMessages(ctx: ConnectorContext, openKfId: string, eventToken:
       page = await kfCall<SyncMsgResult>(ctx, '/cgi-bin/kf/sync_msg', body, '拉取客服消息');
     } catch (err) {
       // Keep whatever earlier rounds produced; the un-advanced cursor makes the rest replayable.
-      if (out.length === 0) throw err;
+      if (out.length === 0 && signals.length === 0) throw err;
       ctx.log.warn({ accountId: ctx.account.id, round, code: err instanceof ConnectorError ? err.code : 'unknown' }, 'wecom_kf: 分页中断，保留已拉取的部分');
       break;
     }
@@ -195,6 +210,8 @@ async function syncMessages(ctx: ConnectorContext, openKfId: string, eventToken:
     for (const raw of page.msg_list ?? []) {
       const msg = toInbound(raw, floorMs);
       if (msg !== null) out.push(msg);
+      const signal = toSignal(raw, floorMs);
+      if (signal !== null) signals.push(signal);
     }
 
     if (typeof page.next_cursor === 'string' && page.next_cursor !== '') {
@@ -204,7 +221,7 @@ async function syncMessages(ctx: ConnectorContext, openKfId: string, eventToken:
     if (page.has_more !== 1) break;
   }
 
-  return out;
+  return { messages: out, signals };
 }
 
 function reply(status: number, body: string): { response: WebhookResponse; messages: InboundMessage[] } {
@@ -270,7 +287,7 @@ export const wecomKfConnector: Connector = {
     }
   },
 
-  async handleWebhook(ctx: ConnectorContext, req: WebhookRequest): Promise<{ response: WebhookResponse; messages: InboundMessage[] }> {
+  async handleWebhook(ctx: ConnectorContext, req: WebhookRequest): Promise<{ response: WebhookResponse; messages: InboundMessage[]; signals?: InboundSignal[] }> {
     const token = (await ctx.getSecret('token')) ?? '';
     const aesKey = (await ctx.getSecret('encodingAesKey')) ?? '';
     if (token === '' || aesKey === '') return reply(500, 'not configured');
@@ -316,14 +333,14 @@ export const wecomKfConnector: Connector = {
     const openKfId = (ctx.config.openKfId ?? '').trim();
     if (openKfId === '' || (typeof event.OpenKfId === 'string' && event.OpenKfId !== '' && event.OpenKfId !== openKfId)) return reply(200, 'success');
 
-    let messages: InboundMessage[] = [];
+    let synced: { messages: InboundMessage[]; signals: InboundSignal[] } = { messages: [], signals: [] };
     try {
-      messages = await syncMessages(ctx, openKfId, event.Token ?? '');
+      synced = await syncMessages(ctx, openKfId, event.Token ?? '');
     } catch (err) {
       // The cursor did not advance, so the next callback replays these. Acknowledge rather than trigger a retry storm.
       ctx.log.warn({ accountId: ctx.account.id, code: err instanceof ConnectorError ? err.code : 'unknown' }, 'wecom_kf: 拉取消息失败');
     }
-    return { response: { status: 200, body: 'success', contentType: 'text/plain' }, messages };
+    return { response: { status: 200, body: 'success', contentType: 'text/plain' }, messages: synced.messages, signals: synced.signals };
   },
 
   async send(ctx: ConnectorContext, req: SendRequest): Promise<SendResult> {

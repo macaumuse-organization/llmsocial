@@ -1,4 +1,4 @@
-import { apiJson, ConnectorError, type Connector, type ConnectorContext, type InboundMessage, type WebhookResponse } from './types.ts';
+import { apiJson, ConnectorError, type Connector, type ConnectorContext, type InboundMessage, type InboundSignal, type WebhookResponse } from './types.ts';
 import { parseFlatXml, wxDecrypt, wxVerify } from './wxcrypto.ts';
 
 /**
@@ -89,6 +89,20 @@ async function accessToken(ctx: ConnectorContext, bypassCache = false): Promise<
 function queryOf(query: Record<string, string>, key: string): string {
   const value = query[key];
   return typeof value === 'string' ? value : '';
+}
+
+/**
+ * A new follower. Only a lead: since the 2021 customer-service rule change a follow opens a
+ * one-minute, three-message window rather than the 48-hour one, so there is nothing useful to
+ * send back from here — the account's own "关注自动回复" covers the greeting.
+ */
+function followSignal(ctx: ConnectorContext, fields: Record<string, string>): InboundSignal[] {
+  if (fields.MsgType !== 'event' || fields.Event !== 'subscribe') return [];
+  const from = (fields.FromUserName ?? '').trim();
+  if (from === '') return [];
+  const createTime = Number(fields.CreateTime);
+  const at = Number.isFinite(createTime) && createTime > 0 ? createTime * 1000 : ctx.now();
+  return [{ kind: 'follow', platformUserId: from.slice(0, 200), ref: `sub:${fields.CreateTime ?? at}`, timestamp: at }];
 }
 
 function textMessage(ctx: ConnectorContext, fields: Record<string, string>): InboundMessage[] {
@@ -201,7 +215,7 @@ export const wechatOaConnector: Connector = {
     }
 
     // WeChat retries the push unless it sees "success" within 5 seconds, so the reply never rides on this response.
-    return { response: { status: 200, body: 'success', contentType: PLAIN_TEXT }, messages: textMessage(ctx, fields) };
+    return { response: { status: 200, body: 'success', contentType: PLAIN_TEXT }, messages: textMessage(ctx, fields), signals: followSignal(ctx, fields) };
   },
 
   async send(ctx, req) {

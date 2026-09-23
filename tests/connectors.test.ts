@@ -269,6 +269,21 @@ test('微信公众号: 明文 POST 映射成一条 dm，时间戳换算成毫秒
   assert.equal(msg.timestamp, 1_758_000_000_000);
 });
 
+test('微信公众号: 关注事件变成一条线索，不是消息', async () => {
+  const f = oaFake();
+  const body = `<xml><ToUserName><![CDATA[gh_abc]]></ToUserName><FromUserName><![CDATA[oNewFollower]]></FromUserName><CreateTime>1758000100</CreateTime><MsgType><![CDATA[event]]></MsgType><Event><![CDATA[subscribe]]></Event></xml>`;
+  const res = await wechatOaConnector.handleWebhook!(f.ctx, webhook({ query: oaQuery(['1758000000', 'nonce123']), rawBody: Buffer.from(body, 'utf8') }));
+  assert.equal(res.response.status, 200);
+  assert.equal(res.response.body, 'success');
+  assert.equal(res.messages.length, 0, '关注不是一条要回复的消息');
+  assert.deepEqual(res.signals, [{ kind: 'follow', platformUserId: 'oNewFollower', ref: 'sub:1758000100', timestamp: 1_758_000_100_000 }]);
+
+  // 取关不算线索
+  const gone = `<xml><FromUserName><![CDATA[oNewFollower]]></FromUserName><CreateTime>1758000200</CreateTime><MsgType><![CDATA[event]]></MsgType><Event><![CDATA[unsubscribe]]></Event></xml>`;
+  const res2 = await wechatOaConnector.handleWebhook!(f.ctx, webhook({ query: oaQuery(['1758000000', 'nonce123']), rawBody: Buffer.from(gone, 'utf8') }));
+  assert.deepEqual(res2.signals, []);
+});
+
 test('微信公众号: 明文 POST 签名不对 → 401 且无消息', async () => {
   const f = oaFake();
   const body = `<xml><FromUserName><![CDATA[oUserOpenId]]></FromUserName><CreateTime>1758000000</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[hi]]></Content><MsgId>1</MsgId></xml>`;
@@ -336,6 +351,42 @@ function kfEvent(now: number): { rawBody: Buffer; query: Record<string, string> 
     query: { msg_signature: wxSignature([KF_TOKEN, ts, 'n1', encrypt]), timestamp: ts, nonce: 'n1' },
   };
 }
+
+test('企业微信客服: 进入会话事件变成线索，旧事件和其它事件都不算', async () => {
+  const now = Date.UTC(2026, 8, 20, 12, 0, 0);
+  const sec = Math.floor(now / 1000);
+  const f = fake({
+    now,
+    config: { corpId: KF_CORP, openKfId: KF_OPEN },
+    secrets: { token: KF_TOKEN, encodingAesKey: AES_KEY, corpSecret: 'kf-secret' },
+    handler: (call) => {
+      if (call.url.includes('/cgi-bin/gettoken')) return { json: { errcode: 0, access_token: 'KF-ACCESS-TOKEN', expires_in: 7200 } };
+      if (call.url.includes('/cgi-bin/kf/sync_msg')) {
+        return {
+          json: {
+            errcode: 0,
+            next_cursor: 'CURSOR-1',
+            has_more: 0,
+            msg_list: [
+              { msgid: 'e-enter', open_kfid: KF_OPEN, send_time: sec - 60, origin: 4, msgtype: 'event', event: { event_type: 'enter_session', external_userid: 'wmLead1', scene: 'video_link' } },
+              { msgid: 'e-transfer', open_kfid: KF_OPEN, send_time: sec - 50, origin: 4, msgtype: 'event', event: { event_type: 'session_status_change', external_userid: 'wmLead1' } },
+              { msgid: 'e-ancient', open_kfid: KF_OPEN, send_time: sec - 3 * 86_400, origin: 4, msgtype: 'event', event: { event_type: 'enter_session', external_userid: 'wmOld' } },
+              { msgid: 'm-text', open_kfid: KF_OPEN, external_userid: 'wmLead1', send_time: sec - 30, origin: 3, msgtype: 'text', text: { content: '你好' } },
+            ],
+          },
+        };
+      }
+      return { status: 404, json: {} };
+    },
+  });
+
+  const { rawBody, query } = kfEvent(now);
+  const res = await wecomKfConnector.handleWebhook!(f.ctx, webhook({ query, rawBody }));
+  assert.equal(res.response.status, 200);
+  assert.deepEqual(res.signals, [{ kind: 'enter_session', platformUserId: 'wmLead1', text: '来源场景：video_link', ref: 'e-enter', timestamp: (sec - 60) * 1000 }]);
+  // 消息照常收，信号不影响消息那一路
+  assert.deepEqual(res.messages.map((m) => m.platformMsgId), ['m-text']);
+});
 
 test('企业微信客服: 回调解密后用 sync_msg 拉取，只收 origin 3/5 并标注 fromSelf', async () => {
   const now = Date.UTC(2026, 8, 20, 12, 0, 0);
