@@ -13,7 +13,7 @@ import { parseSkillMarkdown, skillToMarkdown } from '../seed.ts';
 import { buildStats } from '../stats.ts';
 import { errMessage, newId } from '../util.ts';
 import { HttpError, notFound } from './server.ts';
-import { AccountInput, CampaignInput, PersonaInput, ProviderInput, SettingsInput, SimInput, SkillInput } from './validators.ts';
+import { AccountInput, CampaignInput, PersonaInput, ProviderInput, SettingsInput, SimInput, SkillInput, patchBody } from './validators.ts';
 
 const Id = z.object({ id: z.string().min(1).max(80) });
 
@@ -84,7 +84,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
   server.patch('/api/providers/:id', async (req) => {
     const { id } = Id.parse(req.params);
     if (!repos.providers.get(id)) throw notFound('模型');
-    const { apiKey, ...input } = ProviderInput.partial().parse(req.body);
+    const { apiKey, ...input } = patchBody(ProviderInput, req.body);
     if (apiKey !== undefined) repos.providers.update(id, { apiKeyRef: storeSecret(app, `prov.${id}.apiKey`, apiKey) });
     return repos.providers.update(id, input);
   });
@@ -163,7 +163,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
     const { id } = Id.parse(req.params);
     const existing = repos.skills.get(id);
     if (!existing) throw notFound('技能');
-    const patch = SkillInput.partial().parse(req.body);
+    const patch = patchBody(SkillInput, req.body);
     if (patch.slug && patch.slug !== existing.slug && repos.skills.getBySlug(patch.slug)) throw new HttpError(409, `已经有一个标识为 ${patch.slug} 的技能`);
     return repos.skills.update(id, patch);
   });
@@ -187,7 +187,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
   server.patch('/api/campaigns/:id', async (req) => {
     const { id } = Id.parse(req.params);
     if (!repos.campaigns.get(id)) throw notFound('任务');
-    return repos.campaigns.update(id, CampaignInput.partial().parse(req.body));
+    return repos.campaigns.update(id, patchBody(CampaignInput, req.body));
   });
 
   server.delete('/api/campaigns/:id', async (req) => {
@@ -231,7 +231,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
     const { id } = Id.parse(req.params);
     const existing = repos.accounts.get(id);
     if (!existing) throw notFound('账号');
-    const { secrets, connector, platform, ...input } = AccountInput.partial().parse(req.body);
+    const { secrets, connector, platform, ...input } = patchBody(AccountInput, req.body);
     if (input.timezone && !isValidTimezone(input.timezone)) throw new HttpError(400, '时区无效');
     // Changing the connector or platform of a live account would orphan its threads and stored tokens.
     if ((connector && connector !== existing.connector) || (platform && platform !== existing.platform)) {

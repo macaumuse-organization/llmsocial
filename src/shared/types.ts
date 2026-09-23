@@ -87,6 +87,16 @@ export interface Skill {
   updatedAt: number;
 }
 
+export interface Material {
+  id: string;
+  title: string;
+  url: string;
+  /** One line the AI may use to introduce it. It must not claim more than this says. */
+  description: string;
+  /** Interests this suits, matched against Contact.tags. */
+  tags: string[];
+}
+
 export interface Campaign {
   id: string;
   name: string;
@@ -96,6 +106,8 @@ export interface Campaign {
   /** The only product facts the AI may state. */
   facts: string;
   allowedLinks: string[];
+  /** Also whitelisted for sending. At most one goes out per turn, and never the same one twice. */
+  materials: Material[];
   /** What to say instead of a link on platforms that block links. */
   linkFallback: string;
   /** Empty = every platform. */
@@ -287,6 +299,8 @@ export interface JudgeReport {
   naturalness: number;
   pushiness: number;
   honestyViolations: string[];
+  /** 0-10: did the shared material fit, and was the timing natural. Nothing shared = 10. */
+  materialFit: number;
   summary: string;
   suggestions: string[];
 }
@@ -395,6 +409,7 @@ export interface Stats {
   llm: { providerName: string; model: string; calls: number; failures: number; inputTokens: number; outputTokens: number; costUsd: number; avgLatencyMs: number }[];
   llmCallsToday: number;
   medianReplySeconds: number | null;
+  materials: { campaignId: string; campaignName: string; materialId: string; title: string; shares: number }[];
   accounts: { id: string; name: string; platform: PlatformId; status: AccountStatus; statusDetail: string; sentToday: number; maxPerDay: number }[];
 }
 

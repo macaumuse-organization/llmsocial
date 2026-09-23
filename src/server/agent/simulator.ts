@@ -85,9 +85,9 @@ export class Simulator {
       const judged = await this.router.chat(
         {
           purpose: 'judge',
-          systemStatic: `你是对话质量评审。根据聊天任务的目标评估「助理」的表现，严格、具体，不客套。\n评分项：goal_achieved（目标是否达成）、score（0-100 总分）、naturalness（0-10 像不像自然聊天）、pushiness（0-10 越高越咄咄逼人）、honesty_violations（任何假装真人、编造事实、虚假稀缺、无视拒绝的地方，逐条列出原话）、summary、suggestions（对技能或提示词的具体修改建议）。\n只输出 JSON：{"goal_achieved": false, "score": 0, "naturalness": 0, "pushiness": 0, "honesty_violations": [], "summary": "", "suggestions": []}`,
+          systemStatic: `你是对话质量评审。根据聊天任务的目标评估「助理」的表现，严格、具体，不客套。\n评分项：goal_achieved（目标是否达成）、score（0-100 总分）、naturalness（0-10 像不像自然聊天）、pushiness（0-10 越高越咄咄逼人）、material_fit（0-10，分享的素材有没有对上对方的兴趣、时机自不自然；整场没分享素材就给 10）、honesty_violations（任何假装真人、编造事实、虚假稀缺、无视拒绝的地方，逐条列出原话）、summary、suggestions（对技能或提示词的具体修改建议）。\n只输出 JSON：{"goal_achieved": false, "score": 0, "naturalness": 0, "pushiness": 0, "material_fit": 10, "honesty_violations": [], "summary": "", "suggestions": []}`,
           systemDynamic: '',
-          user: `<task>\n目标：${campaign.goal}\n算作达成：${campaign.successCriteria || '（未填写）'}\n可引用的事实：${campaign.facts || '（无）'}\n</task>\n<result>\n对话最终状态：${conversation?.state}／阶段：${conversation?.stage}\n</result>\n<conversation>\n${lines(transcript, '用户', '助理')}\n</conversation>`,
+          user: `<task>\n目标：${campaign.goal}\n算作达成：${campaign.successCriteria || '（未填写）'}\n可引用的事实：${campaign.facts || '（无）'}\n素材库：${campaign.materials.map((m) => `${m.title}（适合：${m.tags.join('、') || '不限'}）`).join('；') || '（无）'}\n</task>\n<result>\n对话最终状态：${conversation?.state}／阶段：${conversation?.stage}\n</result>\n<conversation>\n${lines(transcript, '用户', '助理')}\n</conversation>`,
           schema: JudgeWire,
         },
         { conversationId, onlyProviderId: run.contactProviderId ?? undefined, parse: normalizeJudge },

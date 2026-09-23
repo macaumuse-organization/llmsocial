@@ -391,6 +391,12 @@ function ReportCard({ report }: { report: JudgeReport }) {
             <label>推销感 {report.pushiness} / 10</label>
             <div className="hint">越低越好。分数高说明太急着把话题拐到产品上。</div>
           </div>
+          {typeof report.materialFit === 'number' ? (
+            <div className="field">
+              <label>素材匹配 {report.materialFit} / 10</label>
+              <div className="hint">分享的素材有没有对上对方的兴趣、时机自不自然。整场没分享就是满分。</div>
+            </div>
+          ) : null}
         </div>
 
         <hr className="divider" />

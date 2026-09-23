@@ -1,6 +1,6 @@
 import type { AccountStatus, FunnelRow, PlatformId, Stage, Stats } from '../shared/types.ts';
 import { STAGES } from '../shared/types.ts';
-import type { Db } from './db/index.ts';
+import { parseJson, type Db } from './db/index.ts';
 import type { Repos } from './db/repos.ts';
 import { DAY, type Clock } from './util.ts';
 
@@ -81,8 +81,24 @@ export function buildStats(db: Db, repos: Repos, clock: Clock, days = 14): Stats
       .map((r) => [r.accountId, r.n]),
   );
 
+  const shareCounts = new Map<string, Stats['materials'][number]>();
+  for (const row of db.all<{ data: string }>("SELECT data FROM events WHERE type = 'material_shared' AND ts > ?", since)) {
+    const d = parseJson<{ materialId?: string; title?: string; campaignId?: string }>(row.data, {});
+    if (!d.materialId || !d.campaignId) continue;
+    const key = `${d.campaignId}/${d.materialId}`;
+    let entry = shareCounts.get(key);
+    if (!entry) {
+      const campaign = repos.campaigns.get(d.campaignId);
+      // The campaign's current title wins, so renaming an item does not split it into two rows.
+      entry = { campaignId: d.campaignId, campaignName: campaign?.name ?? '（已删除的任务）', materialId: d.materialId, title: campaign?.materials.find((m) => m.id === d.materialId)?.title ?? d.title ?? d.materialId, shares: 0 };
+      shareCounts.set(key, entry);
+    }
+    entry.shares++;
+  }
+
   return {
     conversations: { total: counts.total, active: counts.active ?? 0, handoff: counts.handoff ?? 0, optedOut: counts.optedOut ?? 0, needsAction },
+    materials: [...shareCounts.values()].sort((a, b) => b.shares - a.shares),
     messages,
     funnel: [...funnelMap.values()].sort((a, b) => b.total - a.total),
     llm: llm.map((r) => ({ ...r, costUsd: r.costUsd ?? 0, avgLatencyMs: Math.round(r.avgLatencyMs) })),

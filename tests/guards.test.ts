@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, weightedLength } from '../src/server/agent/guards.ts';
+import { checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, matchMaterials, weightedLength } from '../src/server/agent/guards.ts';
+import type { Material } from '../src/shared/types.ts';
 import { detectLanguage } from '../src/server/agent/language.ts';
 import { parseChatScreenshot } from '../src/server/ocr/parseChat.ts';
 import { similarity, tooSimilarToRecent } from '../src/server/agent/similarity.ts';
@@ -92,6 +93,27 @@ test('near-duplicate outbound text is caught, genuinely different text is not', 
   assert.ok(similarity(opener, opener) === 1);
   // Short acknowledgements are naturally identical and must not be blocked.
   assert.equal(tooSimilarToRecent('好的～', ['好的～']), false);
+});
+
+test('素材链接的识别：最长优先、去重、认尾标点和 www', () => {
+  const mat = (id: string, url: string): Material => ({ id, title: id, url, description: '', tags: [] });
+  const list = [mat('a', 'https://ex.com/v/1'), mat('b', 'https://ex.com/v/1/extra'), mat('c', 'https://shop.com/p')];
+
+  assert.deepEqual(matchMaterials(['看这个 https://ex.com/v/1。'], list).map((m) => m.id), ['a']);
+  // b 的 URL 以 a 的为前缀，深的那条才是真命中；同一条出现两次只算一次。
+  assert.deepEqual(matchMaterials(['https://ex.com/v/1/extra 和 https://ex.com/v/1/extra'], list).map((m) => m.id), ['b']);
+  assert.deepEqual(matchMaterials(['www.shop.com/p?x=1'], list).map((m) => m.id), ['c']);
+  assert.deepEqual(matchMaterials(['https://evil.com/v/1'], list), []);
+  assert.deepEqual(matchMaterials(['没有链接'], list), []);
+  // 多条消息按出现顺序
+  assert.deepEqual(matchMaterials(['https://shop.com/p', 'https://ex.com/v/1'], list).map((m) => m.id), ['c', 'a']);
+});
+
+test('素材链接进白名单就能发，屏蔽链接的平台照样拒', () => {
+  const ctx = { autopilot: true, allowedLinks: ['https://ok.com'], linksBlocked: false, canary: 'CANARY-x', protectedTexts: [] };
+  assert.equal(checkOutbound(['看这个 https://mat.com/v/9'], ctx).code, 'link_not_allowed');
+  assert.equal(checkOutbound(['看这个 https://mat.com/v/9'], { ...ctx, allowedLinks: [...ctx.allowedLinks, 'https://mat.com/v/9'] }).ok, true);
+  assert.equal(checkOutbound(['看这个 https://mat.com/v/9'], { ...ctx, allowedLinks: [...ctx.allowedLinks, 'https://mat.com/v/9'], linksBlocked: true }).code, 'link_not_allowed');
 });
 
 test('a chat screenshot becomes ordered messages with the right sides', () => {

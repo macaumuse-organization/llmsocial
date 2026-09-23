@@ -200,7 +200,7 @@ export function createRepos(db: Db, clock: Clock) {
   };
 
   const campaigns = {
-    map: (r: Row) => hydrate<Campaign>(r, { allowedLinks: [], allowedPlatforms: [], skillIds: [], providerIds: [] }, ['followupEnabled', 'enabled'])!,
+    map: (r: Row) => hydrate<Campaign>(r, { allowedLinks: [], materials: [], allowedPlatforms: [], skillIds: [], providerIds: [] }, ['followupEnabled', 'enabled'])!,
     list(): Campaign[] {
       return db.all<Row>('SELECT * FROM campaigns ORDER BY createdAt').map(campaigns.map);
     },
@@ -420,6 +420,10 @@ export function createRepos(db: Db, clock: Clock) {
     },
     lastSentAt(accountId: string): number | null {
       return db.get<{ t: number | null }>("SELECT MAX(sentAt) AS t FROM messages WHERE accountId = ? AND direction = 'out' AND status = 'sent'", accountId)?.t ?? null;
+    },
+    /** What actually reached the other person. The context window is too short to tell what was already shared. */
+    sentTexts(conversationId: string): string[] {
+      return db.all<{ text: string }>("SELECT text FROM messages WHERE conversationId = ? AND direction = 'out' AND status IN ('sent', 'sending') ORDER BY rowid", conversationId).map((r) => r.text);
     },
     recentOutboundTexts(accountId: string, excludeConversationId: string, limit: number): string[] {
       return db

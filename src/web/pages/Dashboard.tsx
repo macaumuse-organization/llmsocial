@@ -9,6 +9,7 @@ const EVENT_LABELS: Record<string, string> = {
   guard_blocked: '回复被安全检查拦下',
   send_failed: '发送失败',
   draft_created: '生成草稿',
+  material_shared: '分享了素材',
   draft_approved: '草稿已批准',
   account_needs_auth: '账号需要重新授权',
   llm_failed: '模型调用失败',
@@ -140,6 +141,35 @@ function StatsBody({ stats }: { stats: Stats }) {
               <Funnel key={row.campaignId ?? `none-${i}`} row={row} />
             ))}
           </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2 className="grow">素材分享次数</h2>
+          <span className="faint small">最近 14 天</span>
+        </div>
+        {stats.materials.length === 0 ? (
+          <Empty>这段时间没有分享过素材。在任务里加几条素材、挂上「按兴趣分享素材」技能，这里才会有数。</Empty>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>任务</th>
+                <th>素材</th>
+                <th style={{ width: 90 }}>次数</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.materials.map((m) => (
+                <tr key={`${m.campaignId}/${m.materialId}`}>
+                  <td className="muted">{m.campaignName}</td>
+                  <td>{m.title}</td>
+                  <td>{m.shares}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 

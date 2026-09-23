@@ -194,6 +194,8 @@ test('bad input is rejected with a readable message, not a 500', async () => {
     ['/api/providers', { name: 'x', kind: 'not-a-kind', model: 'x' }],
     ['/api/skills', { slug: 'Bad Slug', name: 'x', content: 'y' }],
     ['/api/campaigns', { name: 'x', goalType: 'rapport', goal: 'x', allowedLinks: ['javascript:alert(1)'] }],
+    ['/api/campaigns', { name: 'x', goalType: 'rapport', goal: 'x', materials: [{ id: 'm1', title: 'a', url: 'javascript:alert(1)' }] }],
+    ['/api/campaigns', { name: 'x', goalType: 'rapport', goal: 'x', materials: [{ id: 'm1', title: 'a', url: 'https://a.com' }, { id: 'm1', title: 'b', url: 'https://b.com' }] }],
     ['/api/accounts', { name: 'x', platform: 'mars', connector: 'sandbox' }],
     ['/api/accounts', { name: 'x', platform: 'x', connector: 'sandbox', timezone: 'Mars/Olympus' }],
   ];
@@ -204,6 +206,30 @@ test('bad input is rejected with a readable message, not a 500', async () => {
   }
   assert.equal((await c.call('GET', '/api/conversations/does-not-exist')).statusCode, 404);
   assert.equal((await c.call('POST', '/api/import/messages', { accountId: 'nope', contact: { platformUserId: 'u' }, messages: [{ side: 'contact', text: 'hi' }] })).statusCode, 404);
+});
+
+test('一次部分更新只动它点名的字段，不把其余的抹回默认值', async () => {
+  const { c } = await loggedIn();
+  const created = c.json<{ id: string }>(
+    await c.call('POST', '/api/campaigns', {
+      name: '素材任务',
+      goalType: 'share_content',
+      goal: '让对方去看那条视频',
+      facts: '视频讲的是露营装备',
+      maxTurns: 12,
+      materials: [{ id: 'm1', title: '露营清单', url: 'https://ex.com/v/1', description: '讲清楚买什么', tags: ['露营'] }],
+    }),
+  );
+  // zod 的 .partial() 不会脱掉 .default()：没提交的字段会被默认值填上，把已存的内容悄悄冲掉。
+  const patched = c.json<{ facts: string; maxTurns: number; materials: { id: string }[]; mode: string }>(await c.call('PATCH', `/api/campaigns/${created.id}`, { mode: 'autopilot' }));
+  assert.equal(patched.mode, 'autopilot');
+  assert.equal(patched.facts, '视频讲的是露营装备', 'facts 被抹掉了');
+  assert.equal(patched.maxTurns, 12, 'maxTurns 被抹回默认值了');
+  assert.deepEqual(patched.materials.map((m) => m.id), ['m1'], '素材库被抹掉了');
+
+  // 明确提交空数组，仍然要能清空。
+  const cleared = c.json<{ materials: unknown[] }>(await c.call('PATCH', `/api/campaigns/${created.id}`, { materials: [] }));
+  assert.deepEqual(cleared.materials, []);
 });
 
 test('a campaign restricted to overseas platforms never attaches itself to a Chinese account', async () => {

@@ -1,4 +1,4 @@
-import type { PlatformProfile, RiskFlag } from '../../shared/types.ts';
+import type { Material, PlatformProfile, RiskFlag } from '../../shared/types.ts';
 
 // Deterministic checks that run before and after the model. The model gets the same rules in its
 // prompt; these exist because a rule that matters can't depend on a model choosing to follow it.
@@ -98,11 +98,27 @@ export function extractUrls(text: string): string[] {
   return text.match(URL_RE) ?? [];
 }
 
-function sameLink(url: string, allowed: string): boolean {
+export function sameLink(url: string, allowed: string): boolean {
   const norm = (u: string) => u.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/[/?#.,;:!]+$/, '').toLowerCase();
   const a = norm(url);
   const b = norm(allowed);
   return a === b || a.startsWith(`${b}/`) || a.startsWith(`${b}?`);
+}
+
+/**
+ * Library items whose link appears in the text, in first-appearance order, each at most once.
+ * Longest URL first: one item's URL can be a prefix of another's, and the deeper one is the match.
+ */
+export function matchMaterials(texts: string[], materials: Material[]): Material[] {
+  const byLength = [...materials].sort((a, b) => b.url.length - a.url.length);
+  const hits: Material[] = [];
+  for (const text of texts) {
+    for (const url of extractUrls(text)) {
+      const hit = byLength.find((m) => sameLink(url, m.url));
+      if (hit && !hits.some((h) => h.id === hit.id)) hits.push(hit);
+    }
+  }
+  return hits;
 }
 
 export interface OutboundCheck {
@@ -147,7 +163,7 @@ export function checkOutbound(messages: string[], ctx: OutboundContext): Outboun
     }
     for (const url of extractUrls(m)) {
       if (ctx.linksBlocked || !ctx.allowedLinks.some((a) => sameLink(url, a))) {
-        return { ok: false, code: 'link_not_allowed', correction: `上一稿包含不允许发送的链接（${url.slice(0, 80)}）。只能原样使用「允许发送的链接」，没有就不要发链接。` };
+        return { ok: false, code: 'link_not_allowed', correction: `上一稿包含不允许发送的链接（${url.slice(0, 80)}）。只能原样使用「允许发送的链接」或「素材库」里的链接，没有就不要发链接。` };
       }
     }
   }

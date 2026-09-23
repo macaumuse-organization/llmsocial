@@ -244,9 +244,20 @@ function ContactPanel({ detail, refresh }: { detail: ConversationDetail; refresh
         </div>
       ) : null}
 
-      {contact.facts.length > 0 || contact.summary ? (
+      {contact.tags.length > 0 || contact.facts.length > 0 || contact.summary ? (
         <div className="card card-pad stack" style={{ gap: 8 }}>
           <h3>长期记忆</h3>
+          {contact.tags.length > 0 ? (
+            <div className="row-tight" style={{ flexWrap: 'wrap' }}>
+              <span className="small muted">兴趣</span>
+              {contact.tags.map((t) => (
+                // AI 会标错，这是最便宜的纠正路径。
+                <button key={t} className="ghost sm" title="点一下移除" onClick={() => void api.updateContact(contact.id, { tags: contact.tags.filter((x) => x !== t) }).then(refresh).catch(toast.error)}>
+                  {t} ✕
+                </button>
+              ))}
+            </div>
+          ) : null}
           {contact.summary ? <div className="small pre-wrap">{contact.summary}</div> : null}
           {contact.facts.map((f, i) => (
             <div key={i} className="small muted">

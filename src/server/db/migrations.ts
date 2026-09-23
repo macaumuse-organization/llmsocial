@@ -266,4 +266,7 @@ export const MIGRATIONS: string[] = [
     updatedAt INTEGER NOT NULL
   );
   `,
+  `
+  ALTER TABLE campaigns ADD COLUMN materials TEXT NOT NULL DEFAULT '[]';
+  `,
 ];

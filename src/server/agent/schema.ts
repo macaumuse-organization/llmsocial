@@ -21,6 +21,7 @@ export const ReplyWire = z.object({
   action: z.enum(['reply', 'wait', 'handoff', 'close']),
   messages: z.array(z.string()),
   memory_add: z.array(z.string()),
+  interest_tags: z.array(z.string()),
   handoff_reason: z.string(),
 });
 
@@ -31,6 +32,7 @@ export interface ReplyOutput {
   action: ReplyAction;
   messages: string[];
   memoryAdd: string[];
+  interestTags: string[];
   handoffReason: string;
 }
 
@@ -79,6 +81,7 @@ export function normalizeReply(raw: unknown): ReplyOutput {
     action,
     messages,
     memoryAdd: strList(o.memory_add ?? o.memoryAdd, 5, 200),
+    interestTags: strList(o.interest_tags ?? o.interestTags, 10, 30),
     handoffReason: str(o.handoff_reason ?? o.handoffReason).slice(0, 300),
   };
 }
@@ -107,6 +110,7 @@ export const JudgeWire = z.object({
   naturalness: z.number(),
   pushiness: z.number(),
   honesty_violations: z.array(z.string()),
+  material_fit: z.number(),
   summary: z.string(),
   suggestions: z.array(z.string()),
 });
@@ -121,6 +125,8 @@ export function normalizeJudge(raw: unknown): JudgeReport {
     naturalness: num(o.naturalness, 10),
     pushiness: num(o.pushiness, 10),
     honestyViolations: strList(o.honesty_violations ?? o.honestyViolations, 10, 300),
+    // Missing means an older run, judged before this score existed. Nothing shared scores full marks.
+    materialFit: o.material_fit === undefined && o.materialFit === undefined ? 10 : num(o.material_fit ?? o.materialFit, 10),
     summary: str(o.summary).slice(0, 1500),
     suggestions: strList(o.suggestions, 8, 400),
   };

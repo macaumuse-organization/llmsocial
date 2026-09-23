@@ -4,6 +4,15 @@ import { AsyncButton, Check, Confirm, Empty, Field, Loading, Modal, PLATFORM_LAB
 
 const DEFAULT_CAMPAIGN_ID = 'camp_default';
 
+/** Tags stay a string while typing: splitting on every keystroke would eat the separator. */
+interface MaterialRow {
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+  tagsText: string;
+}
+
 interface Form {
   name: string;
   goalType: GoalType;
@@ -12,6 +21,7 @@ interface Form {
   facts: string;
   /** One link per line; split on submit. */
   linksText: string;
+  materials: MaterialRow[];
   linkFallback: string;
   allowedPlatforms: PlatformId[];
   skillIds: string[];
@@ -36,6 +46,7 @@ function blankForm(): Form {
     successCriteria: '',
     facts: '',
     linksText: '',
+    materials: [],
     linkFallback: '',
     allowedPlatforms: [],
     skillIds: [],
@@ -61,6 +72,7 @@ function formOf(c: Campaign): Form {
     successCriteria: c.successCriteria,
     facts: c.facts,
     linksText: c.allowedLinks.join('\n'),
+    materials: c.materials.map((m) => ({ ...m, tagsText: m.tags.join('、') })),
     linkFallback: c.linkFallback,
     allowedPlatforms: [...c.allowedPlatforms],
     skillIds: [...c.skillIds],
@@ -89,6 +101,18 @@ function bodyOf(f: Form) {
       .split('\n')
       .map((s) => s.trim())
       .filter((s) => s !== ''),
+    // The id is the key share counts group by, so it is kept across edits, never regenerated.
+    materials: f.materials.map((m) => ({
+      id: m.id,
+      title: m.title.trim(),
+      url: m.url.trim(),
+      description: m.description.trim(),
+      tags: m.tagsText
+        .split(/[,，、\s]+/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 10),
+    })),
     linkFallback: f.linkFallback.trim(),
     allowedPlatforms: f.allowedPlatforms,
     skillIds: f.skillIds,
@@ -294,7 +318,8 @@ function CampaignForm({
   const goalHint = meta.goalTypes.find((g) => g.id === form.goalType)?.hint ?? '';
   const chosenProviders = form.providerIds.map((id) => providers.find((p) => p.id === id) ?? null);
   const restProviders = providers.filter((p) => !form.providerIds.includes(p.id));
-  const invalid = form.name.trim() === '' || form.goal.trim() === '';
+  const invalid = form.name.trim() === '' || form.goal.trim() === '' || form.materials.some((m) => m.title.trim() === '' || m.url.trim() === '');
+  const setMaterial = (i: number, patch: Partial<MaterialRow>) => set('materials', form.materials.map((m, j) => (j === i ? { ...m, ...patch } : m)));
 
   const moveProvider = (index: number, delta: number) => {
     const next = [...form.providerIds];
@@ -315,7 +340,7 @@ function CampaignForm({
           <AsyncButton
             className="primary"
             disabled={invalid}
-            title={invalid ? '名称和目标都要填' : undefined}
+            title={invalid ? '名称和目标都要填，素材每条都要有标题和链接' : undefined}
             onClick={async () => {
               const body = bodyOf(form);
               if (campaign) await api.updateCampaign(campaign.id, body);
@@ -367,6 +392,34 @@ function CampaignForm({
           <input value={form.linkFallback} onChange={(e) => set('linkFallback', e.target.value)} placeholder="主页有官网地址，或者私信我发你" />
         </Field>
       </div>
+
+
+      <Field
+        label="素材库"
+        hint="想让对方去看的东西：短视频、商品页、介绍页。AI 只在对方的兴趣和「适合」对得上、聊天里又刚好有由头时才发一条，发过的不再主动发。这里的链接自动算白名单，不用再填到上面。"
+      >
+        <div className="stack" style={{ gap: 8 }}>
+          {form.materials.map((m, i) => (
+            <div key={m.id} className="row-tight">
+              <input style={{ width: 160 }} value={m.title} onChange={(e) => setMaterial(i, { title: e.target.value })} placeholder="标题" />
+              <input className="grow" value={m.url} onChange={(e) => setMaterial(i, { url: e.target.value })} placeholder="https://…" />
+              <input className="grow" value={m.description} onChange={(e) => setMaterial(i, { description: e.target.value })} placeholder="一句话说清楚讲什么" />
+              <input style={{ width: 150 }} value={m.tagsText} onChange={(e) => setMaterial(i, { tagsText: e.target.value })} placeholder="适合：露营, 户外" />
+              <button className="ghost sm" onClick={() => set('materials', form.materials.filter((_, j) => j !== i))}>
+                ✕
+              </button>
+            </div>
+          ))}
+          <button
+            className="sm"
+            disabled={form.materials.length >= 20}
+            title={form.materials.length >= 20 ? '最多 20 条' : undefined}
+            onClick={() => set('materials', [...form.materials, { id: `mat_${crypto.randomUUID().slice(0, 8)}`, title: '', url: '', description: '', tagsText: '' }])}
+          >
+            + 添加素材
+          </button>
+        </div>
+      </Field>
 
       <Field label="允许运行的平台" hint="全不勾就是不限平台。勾了之后，其它平台的账号挂上这个任务也不会动。比如 VPN 相关的任务只勾 X / Instagram / YouTube，别让它跑到国内平台上去。">
         <div className="row">
@@ -506,7 +559,7 @@ function CampaignForm({
 
       <Check checked={form.enabled} onChange={(v) => set('enabled', v)} label="启用这个任务" hint="停用后，挂着它的账号收到消息也不会起草或回复。" />
 
-      {invalid ? <div className="notice danger">名称和目标都要填，AI 得知道这轮对话要干什么。</div> : null}
+      {invalid ? <div className="notice danger">名称和目标都要填，AI 得知道这轮对话要干什么；素材每条都要有标题和链接。</div> : null}
     </Modal>
   );
 }

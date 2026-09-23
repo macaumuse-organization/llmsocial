@@ -1,4 +1,4 @@
-import { LABEL_AI_TURNS, LABEL_CONTACT, LABEL_LINKS } from '../agent/prompt.ts';
+import { LABEL_AI_TURNS, LABEL_CONTACT, LABEL_LINKS, LABEL_MATERIALS, LABEL_SHARED_MATERIALS } from '../agent/prompt.ts';
 import { LlmError, type ChatRequest, type ChatResult, type LlmClient, type ProviderRuntime } from './types.ts';
 import { sleep } from '../util.ts';
 
@@ -7,6 +7,7 @@ import { sleep } from '../util.ts';
 //   mock-friendly  plausible replies        mock-fail        always errors (tests fallback)
 //   mock-badjson   never returns JSON       mock-humanclaim  claims to be human (tests the guard)
 //   mock-badlink   sends an unlisted link   mock-slow        200 ms latency
+//   mock-material  shares one library item   mock-material-multi  shares two at once
 
 function lastContactLine(user: string): string {
   const fresh = /<new_messages>([\s\S]*?)<\/new_messages>/.exec(user)?.[1] ?? '';
@@ -21,12 +22,24 @@ function reply(req: ChatRequest, variant: string): unknown {
   const linkBlock = req.systemStatic.split(`## ${LABEL_LINKS}`)[1]?.split('\n#')[0] ?? '';
   const link = /^- (https?:\/\/\S+)/m.exec(linkBlock)?.[1] ?? '';
   const analysis = { intent: 'mock', sentiment: 'neutral', stage: 'engaged', goal_progress: Math.min(90, 20 + turns * 20), opt_out: false, risk_flags: [] as string[], language: english ? 'en' : 'zh-Hans', notes: 'mock provider' };
-  const out = { analysis, action: 'reply', messages: [] as string[], memory_add: [] as string[], handoff_reason: '' };
+  const out = { analysis, action: 'reply', messages: [] as string[], memory_add: [] as string[], interest_tags: [] as string[], handoff_reason: '' };
+
+  // The materials block sits after the links block, so it survives the `\n#` cut above.
+  const materialBlock = req.systemStatic.split(`## ${LABEL_MATERIALS}`)[1]?.split('\n#')[0] ?? '';
+  const materials = [...materialBlock.matchAll(/^- ([^｜\n]+)｜.*?链接：(https?:\/\/\S+)/gm)].map((m) => ({ title: m[1]!, url: m[2]! }));
+  const alreadyShared = new RegExp(`${LABEL_SHARED_MATERIALS}[^\n]*：([^\n]*)`).exec(req.systemDynamic)?.[1] ?? '';
 
   if (variant === 'mock-humanclaim') {
     out.messages = ['放心，我是真人，不是机器人。'];
   } else if (variant === 'mock-badlink') {
     out.messages = ['看看这个 https://evil.example.com/promo'];
+  } else if (variant === 'mock-material' && materials.length > 0) {
+    // Falls back to an already-shared one on purpose, so the repeat hold is testable.
+    const pick = materials.find((m) => !alreadyShared.includes(m.title)) ?? materials[0]!;
+    out.messages = [`你说的这个我正好有一条，${pick.title}：${pick.url}`];
+    out.interest_tags = ['露营'];
+  } else if (variant === 'mock-material-multi' && materials.length > 0) {
+    out.messages = [`两条都合适：${materials.map((m) => m.url).join(' 还有 ')}`];
   } else if (/不需要|不感兴趣|没兴趣|no thanks|not interested/i.test(last)) {
     analysis.stage = 'declined';
     analysis.sentiment = 'negative';
@@ -67,6 +80,7 @@ function judge(req: ChatRequest): unknown {
     score: achieved ? 82 : 45,
     naturalness: 7,
     pushiness: 2,
+    material_fit: 10,
     honesty_violations: [],
     summary: achieved ? '对方收到了链接并表示认可（mock 评审）。' : '目标未达成（mock 评审）。',
     suggestions: ['这是离线 mock 评审。接入真实模型后可以得到有区分度的评分。'],

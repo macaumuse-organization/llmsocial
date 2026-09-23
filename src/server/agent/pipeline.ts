@@ -11,7 +11,7 @@ import { LlmError } from '../llm/types.ts';
 import { RetryLater, type Job, type JobQueue } from '../queue/jobs.ts';
 import { nextAllowedTime, pacingDelayMs } from '../queue/schedule.ts';
 import { DAY, HOUR, KeyedMutex, MINUTE, errMessage, newId, type Clock, type Logger } from '../util.ts';
-import { HARD_FLAGS, RISK_LABELS, checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure } from './guards.ts';
+import { HARD_FLAGS, RISK_LABELS, checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, matchMaterials } from './guards.ts';
 import { LANGUAGE_LABELS, detectLanguage } from './language.ts';
 import { buildReplyPrompt, buildSummaryPrompt, type PromptContext, type Trigger } from './prompt.ts';
 import { ReplyWire, SummaryWire, normalizeReply, normalizeSummary, type ReplyOutput } from './schema.ts';
@@ -52,6 +52,7 @@ interface Prepared {
   fresh: Message[];
   lastInboundId: string | null;
   lastOutboundActivityId: string | null;
+  sharedMaterialIds: string[];
   expired: boolean;
 }
 
@@ -262,6 +263,9 @@ export class Pipeline {
       fresh: delivered.slice(lastOut + 1),
       lastInboundId: repos.messages.lastInboundId(conversation.id),
       lastOutboundActivityId: repos.messages.lastOutboundActivityId(conversation.id),
+      // Over the whole thread, not `delivered` — the context window is short and an item shared
+      // forty messages ago would look unshared.
+      sharedMaterialIds: campaign.materials.length === 0 ? [] : matchMaterials(repos.messages.sentTexts(conversation.id), campaign.materials).map((m) => m.id),
       expired: conversation.deadlineAt !== null && conversation.deadlineAt <= clock.now(),
     };
   }
@@ -272,7 +276,7 @@ export class Pipeline {
     const stamp = (value: Prepared) => JSON.stringify([
       value.conversation.state, value.conversation.modeOverride, value.conversation.campaignId,
       value.account.status, value.campaign, value.persona, value.skills,
-      value.contact.notes, value.contact.facts, value.lastOutboundActivityId,
+      value.contact.notes, value.contact.facts, value.contact.tags, value.lastOutboundActivityId,
     ]);
     return stamp(current) !== stamp(p);
   }
@@ -312,29 +316,30 @@ export class Pipeline {
       timezone: p.account.timezone,
       canary,
       correction,
+      sharedMaterialIds: p.sharedMaterialIds,
     };
   }
 
   /** Model call plus the outbound guards, with one corrective retry. */
-  private async draft(p: Prepared, opts: GenerateOptions): Promise<{ output: ReplyOutput; texts: string[]; llmCallId: string; blocked: string }> {
+  private async draft(p: Prepared, opts: GenerateOptions): Promise<{ output: ReplyOutput; texts: string[]; llmCallId: string; blocked: string; materialReview: string }> {
     const { repos, router } = this.d;
     const profile = platformProfile(p.account.platform);
     const canary = `CANARY-${randomBytes(6).toString('hex')}`;
     const recent = repos.messages.recentOutboundTexts(p.account.id, p.conversation.id, 60);
     let correction = '';
-    let last: { output: ReplyOutput; texts: string[]; llmCallId: string; blocked: string } | null = null;
+    let last: { output: ReplyOutput; texts: string[]; llmCallId: string; blocked: string; materialReview: string } | null = null;
 
     for (let attempt = 0; attempt < 2; attempt++) {
       const prompt = buildReplyPrompt(this.promptContext(p, opts.trigger, opts.operatorHint ?? '', canary, correction));
       const routed = await router.chat({ purpose: 'reply', ...prompt, schema: ReplyWire }, { conversationId: p.conversation.id, providerIds: p.campaign.providerIds, onlyProviderId: opts.providerId, parse: normalizeReply });
       const output = routed.value;
       const texts = output.messages.length > 0 ? fitToPlatform(output.messages, profile, p.conversation.kind) : [];
-      last = { output, texts, llmCallId: routed.llmCallId, blocked: '' };
+      last = { output, texts, llmCallId: routed.llmCallId, blocked: '', materialReview: '' };
       if (texts.length === 0) return last;
 
       const check = checkOutbound(texts, {
         autopilot: p.mode === 'autopilot',
-        allowedLinks: p.campaign.allowedLinks,
+        allowedLinks: [...p.campaign.allowedLinks, ...p.campaign.materials.map((m) => m.url)],
         linksBlocked: profile.links[p.conversation.kind] === 'blocked',
         canary,
         protectedTexts: p.skills.map((s) => s.content),
@@ -348,6 +353,11 @@ export class Pipeline {
         correction = '这条回复和这个账号最近发给别人的消息几乎一样。结合这位对方说过的具体内容，换一种写法。';
         continue;
       }
+      // "One at a time" and "never twice" are prompt rules, and a model that ignores them gets a
+      // person's eyes rather than a retry: "对方自己要链接" is a legitimate repeat an operator can approve.
+      const shared = matchMaterials(texts, p.campaign.materials);
+      const repeated = shared.filter((m) => p.sharedMaterialIds.includes(m.id));
+      last.materialReview = shared.length > 1 ? `一次发了 ${shared.length} 条素材，确认只留一条再发` : repeated.length > 0 ? `又发了已经分享过的「${repeated[0]!.title}」，确认是对方要的再发` : '';
       return last;
     }
     return last!;
@@ -398,7 +408,7 @@ export class Pipeline {
       return '';
     }
 
-    const { output, texts, llmCallId, blocked } = drafted;
+    const { output, texts, llmCallId, blocked, materialReview } = drafted;
     const now = clock.now();
     db.tx(() => {
       const current = repos.conversations.get(conversationId);
@@ -415,6 +425,9 @@ export class Pipeline {
       if (output.memoryAdd.length > 0) {
         const facts = [...new Set([...contact.facts, ...output.memoryAdd])].slice(-30);
         repos.contacts.update(contact.id, { facts });
+      }
+      if (output.interestTags.length > 0) {
+        repos.contacts.update(contact.id, { tags: [...new Set([...contact.tags, ...output.interestTags])].slice(-20) });
       }
       if (analysis.language && analysis.language !== contact.language && /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/.test(analysis.language)) repos.contacts.update(contact.id, { language: analysis.language });
 
@@ -441,7 +454,7 @@ export class Pipeline {
       }
 
       const soft = flags.filter((f) => !HARD_FLAGS.includes(f));
-      const reviewReason = soft.length > 0 ? `涉及${soft.map((f) => RISK_LABELS[f]).join('、')}，需要人工确认` : repos.settings.get().autopilotPaused && this.effectiveMode(current, p.account, p.campaign) === 'autopilot' ? '全局自动发送已暂停' : '';
+      const reviewReason = soft.length > 0 ? `涉及${soft.map((f) => RISK_LABELS[f]).join('、')}，需要人工确认` : materialReview !== '' ? materialReview : repos.settings.get().autopilotPaused && this.effectiveMode(current, p.account, p.campaign) === 'autopilot' ? '全局自动发送已暂停' : '';
       const auto = p.mode === 'autopilot' && reviewReason === '';
       const batchId = newId('batch');
       const outgoing: { text: string; kind: Message['kind'] }[] = texts.map((text) => ({ text, kind: 'text' as const }));
@@ -589,6 +602,7 @@ export class Pipeline {
       const sentAt = clock.now();
       const platformMsgId = sent.platformMsgId && !repos.messages.existsPlatformId(account.id, sent.platformMsgId) ? sent.platformMsgId : null;
       repos.messages.update(message.id, { status: 'sent', sentAt, platformMsgId, error: '' });
+      this.recordMaterialShares(conversation, message.text, message.id);
       const fresh = repos.conversations.get(conversation.id)!;
       const patch: Partial<Conversation> = { lastOutboundAt: sentAt, lastMessageAt: sentAt, unread: 0 };
       if (message.kind === 'disclosure') patch.disclosedAt = sentAt;
@@ -637,13 +651,28 @@ export class Pipeline {
   }
 
   /** Manual-bridge accounts: the owner sent it from their phone. */
+  /**
+   * Only for text that actually went out. Counting drafts would include the ones an operator rejected
+   * or rewrote, and the numbers would stop agreeing with what the other person saw.
+   */
+  private recordMaterialShares(conversation: Conversation, text: string, messageId: string): void {
+    const { repos } = this.d;
+    const campaign = conversation.campaignId === null ? undefined : repos.campaigns.get(conversation.campaignId);
+    if (!campaign || campaign.materials.length === 0) return;
+    for (const m of matchMaterials([text], campaign.materials)) {
+      repos.events.add('material_shared', { materialId: m.id, title: m.title, campaignId: campaign.id }, { accountId: conversation.accountId, conversationId: conversation.id, messageId });
+    }
+  }
+
   markSent(messageId: string, editedText?: string): void {
     const { repos, clock } = this.d;
     const message = repos.messages.get(messageId);
     if (!message || !['pending_approval', 'failed'].includes(message.status)) throw new Error('这条消息不能标记为已发送');
     const now = clock.now();
-    repos.messages.update(messageId, { text: editedText?.trim() || message.text, approved: true, status: 'sent', sentAt: now, error: '' });
+    const finalText = editedText?.trim() || message.text;
+    repos.messages.update(messageId, { text: finalText, approved: true, status: 'sent', sentAt: now, error: '' });
     const conversation = repos.conversations.get(message.conversationId);
+    if (conversation) this.recordMaterialShares(conversation, finalText, messageId);
     if (conversation) repos.conversations.update(conversation.id, { lastOutboundAt: now, lastMessageAt: now, unread: 0, ...(message.kind === 'disclosure' ? { disclosedAt: now } : {}), aiTurns: conversation.aiTurns + (message.author === 'ai' && message.kind === 'text' && !this.earlierTextInBatch(message) ? 1 : 0) });
     this.notify(message.conversationId);
   }
