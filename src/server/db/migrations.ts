@@ -292,4 +292,7 @@ export const MIGRATIONS: string[] = [
 
   ALTER TABLE accounts ADD COLUMN signalIntervalS INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  ALTER TABLE accounts ADD COLUMN lastWebhookAt INTEGER;
+  `,
 ];

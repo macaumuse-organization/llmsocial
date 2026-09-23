@@ -11,7 +11,11 @@ import { errMessage } from '../util.ts';
 export function buildWebhookServer(app: App): FastifyInstance {
   const server = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024, trustProxy: true });
 
-  // Signatures are computed over the exact bytes; parsing first would destroy them.
+  // Signatures are computed over the exact bytes; parsing first would destroy them. The built-in
+  // application/json and text/plain parsers have to go too: a catch-all only applies when no specific
+  // parser matches, so without this every JSON callback (Instagram, the self-hosted bridge) arrived
+  // as a parsed object, rawBody came through empty, and every signature check failed.
+  server.removeAllContentTypeParsers();
   server.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
 
   server.get('/healthz', async () => ({ ok: true }));
@@ -30,6 +34,9 @@ export function buildWebhookServer(app: App): FastifyInstance {
 
     try {
       const { response, messages, signals } = await connector.handleWebhook(app.connectors.context(account), webhookRequest);
+      // Proof the platform can reach us and the credentials match: shown on the account card, so an
+      // operator setting up a callback URL can see the moment it starts working.
+      if (response.status < 400) app.repos.accounts.update(account.id, { lastWebhookAt: app.clock.now() });
       for (const message of messages.sort((a, b) => a.timestamp - b.timestamp)) app.pipeline.ingest(account.id, message);
       for (const signal of signals ?? []) app.pipeline.ingestSignal(account.id, signal);
       if (messages.length > 0) app.bus.emit({ type: 'account', accountId: account.id });

@@ -36,6 +36,7 @@ type FakeHandler = (call: FakeCall) => FakeReply;
 interface Fake {
   ctx: ConnectorContext;
   calls: FakeCall[];
+  notices: string[];
   cursor(): Record<string, unknown>;
   secret(field: string): string | undefined;
   setNow(ms: number): void;
@@ -61,6 +62,7 @@ function headersOf(init: RequestInit): Record<string, string> {
 
 function fake(opts: { config?: Record<string, string>; secrets?: Record<string, string>; cursor?: Record<string, unknown>; now?: number; handler?: FakeHandler } = {}): Fake {
   const calls: FakeCall[] = [];
+  const notices: string[] = [];
   const secrets = new Map<string, string>(Object.entries(opts.secrets ?? {}));
   let cursor: Record<string, unknown> = { ...(opts.cursor ?? {}) };
   let now = opts.now ?? Date.UTC(2026, 8, 20, 12, 0, 0);
@@ -87,6 +89,7 @@ function fake(opts: { config?: Record<string, string>; secrets?: Record<string, 
     maxPerContactDay: 5,
     pollIntervalS: 300,
     lastPolledAt: null,
+    lastWebhookAt: null,
     createdAt: 0,
     updatedAt: 0,
   };
@@ -120,11 +123,15 @@ function fake(opts: { config?: Record<string, string>; secrets?: Record<string, 
     now: () => now,
     log: silentLogger,
     fetch: fetchImpl,
+    notice: (text) => {
+      notices.push(text);
+    },
   };
 
   return {
     ctx,
     calls,
+    notices,
     cursor: () => cursor,
     secret: (field) => secrets.get(field),
     setNow: (ms) => {
@@ -861,11 +868,15 @@ test('X: 私信 403 不影响提及，并在 6 小时内跳过私信', async () 
   assert.equal(dmCalls, 1);
   assert.equal(f.cursor().mentionsSinceId, '1900000000000000002');
   assert.ok((f.cursor().dmDisabledUntil as number) > now);
+  // 以前这里只写一行日志，账号看起来就是「没人私信」。现在要让操作者看得见。
+  assert.equal(f.notices.length, 1);
+  assert.match(f.notices[0]!, /私信要 Pro/);
 
   // Next poll inside the backoff window does not touch the DM endpoint again.
   const second = await xConnector.poll!(f.ctx);
   assert.equal(second.length, 0);
   assert.equal(dmCalls, 1);
+  assert.equal(f.notices.length, 1, '退避期内不重复提示');
 });
 
 test('X: 429 映射成 rate_limited 并带上 retry-after；错误里没有令牌', async () => {

@@ -75,6 +75,11 @@ export function buildStats(db: Db, repos: Repos, clock: Clock, days = 14): Stats
   );
   const medianReplySeconds = gaps.length === 0 ? null : Math.round(gaps[Math.floor(gaps.length / 2)]!.gap / 1000);
 
+  // Derived rather than stored: the message table already knows, and a column would be one more
+  // write on every ingest and every send.
+  const lastInbound = new Map(db.all<{ accountId: string; t: number }>("SELECT accountId, MAX(createdAt) AS t FROM messages WHERE direction = 'in' GROUP BY accountId").map((r) => [r.accountId, r.t]));
+  const lastSent = new Map(db.all<{ accountId: string; t: number }>("SELECT accountId, MAX(sentAt) AS t FROM messages WHERE direction = 'out' AND status = 'sent' GROUP BY accountId").map((r) => [r.accountId, r.t]));
+
   const sentToday = new Map(
     db
       .all<{ accountId: string; n: number }>("SELECT accountId, COUNT(*) AS n FROM messages WHERE direction = 'out' AND status = 'sent' AND sentAt > ? GROUP BY accountId", now - DAY)
@@ -112,6 +117,8 @@ export function buildStats(db: Db, repos: Repos, clock: Clock, days = 14): Stats
       statusDetail: a.statusDetail,
       sentToday: sentToday.get(a.id) ?? 0,
       maxPerDay: a.maxPerDay,
+      lastInboundAt: lastInbound.get(a.id) ?? null,
+      lastSentAt: lastSent.get(a.id) ?? null,
     })),
   };
 }

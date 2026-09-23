@@ -259,6 +259,8 @@ export const xConnector: Connector = {
       if (err instanceof ConnectorError && err.code === 'blocked') {
         patchCursor(ctx, { dmDisabledUntil: ctx.now() + DM_BACKOFF_MS });
         ctx.log.warn({ accountId: ctx.account.id, connector: 'x' }, 'dm_events forbidden (plan lacks DM access); skipping DMs for 6h');
+        // Otherwise this degrades silently to comments-only and looks like "nobody is messaging us".
+        ctx.notice('X 拒绝读取私信（403）：这个开发者应用的层级没有私信权限，私信要 Pro 及以上。评论和提及照常收，私信 6 小时后再试。');
       } else {
         throw err;
       }

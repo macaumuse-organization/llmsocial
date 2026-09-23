@@ -63,6 +63,10 @@ export class ConnectorRegistry {
       now: () => this.clock.now(),
       log: this.log,
       fetch: this.fetchImpl,
+      notice: (text) => {
+        repos.accounts.update(account.id, { statusDetail: text.slice(0, 200) });
+        repos.events.add('account_notice', { text: text.slice(0, 300) }, { accountId: account.id, level: 'warn' });
+      },
     };
   }
 }

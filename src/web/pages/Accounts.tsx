@@ -208,7 +208,11 @@ export function AccountsPage() {
           {accounts.map((account) => {
             const connector = connectorOf(account.connector);
             const badge = STATUS_BADGE[account.status];
-            const sentToday = stats.accounts.find((a) => a.id === account.id)?.sentToday ?? 0;
+            const accountStats = stats.accounts.find((a) => a.id === account.id);
+            const sentToday = accountStats?.sentToday ?? 0;
+            // What this account has actually done, not what the connector is supposed to do. The
+            // first real message in and the first real reply out are the whole point of verifying.
+            const liveUnproven = connector?.untestedLive === true && (accountStats?.lastInboundAt == null || accountStats?.lastSentAt == null);
             const campaignName = campaigns.find((c) => c.id === account.defaultCampaignId)?.name;
             const personaName = personas.find((p) => p.id === account.personaId)?.name;
             const webhookUrl = `${meta.webhookBaseUrl}/webhooks/${account.id}`;
@@ -221,7 +225,7 @@ export function AccountsPage() {
                     <div className="row-tight">
                       <strong>{account.name}</strong>
                       <span className={badge.className}>{badge.label}</span>
-                      {account.connector === 'sandbox' ? <span className="badge">本地演练</span> : account.connector === 'manual' ? <span className="badge">手动收发</span> : connector?.untestedLive ? <span className="badge warn">需验证实际收发</span> : null}
+                      {account.connector === 'sandbox' ? <span className="badge">本地演练</span> : account.connector === 'manual' ? <span className="badge">手动收发</span> : liveUnproven ? <span className="badge warn">还没跑通收发</span> : connector?.untestedLive ? <span className="badge accent">收发已跑通</span> : null}
                     </div>
                     <div className="small muted">
                       {PLATFORM_LABELS[account.platform]} · {connector?.label ?? account.connector}
@@ -242,8 +246,26 @@ export function AccountsPage() {
                     <span>
                       今日已发 <strong>{sentToday}</strong> / {account.maxPerDay || '不限'}
                     </span>
-                    <span className="faint">·</span>
-                    <span>上次拉取 {timeAgo(account.lastPolledAt)}</span>
+                    {connector?.canPoll ? (
+                      <>
+                        <span className="faint">·</span>
+                        <span>上次拉取 {timeAgo(account.lastPolledAt)}</span>
+                      </>
+                    ) : null}
+                    {connector?.usesWebhook ? (
+                      <>
+                        <span className="faint">·</span>
+                        <span title="平台最近一次打到回调地址、并且签名校验通过的时间，包括平台自己的地址验证">上次回调 {account.lastWebhookAt ? timeAgo(account.lastWebhookAt) : '从没收到'}</span>
+                      </>
+                    ) : null}
+                    {account.connector !== 'sandbox' && account.connector !== 'manual' ? (
+                      <>
+                        <span className="faint">·</span>
+                        <span>上次收到 {accountStats?.lastInboundAt ? timeAgo(accountStats.lastInboundAt) : '还没有'}</span>
+                        <span className="faint">·</span>
+                        <span>上次发出 {accountStats?.lastSentAt ? timeAgo(accountStats.lastSentAt) : '还没有'}</span>
+                      </>
+                    ) : null}
                     {campaignName ? (
                       <>
                         <span className="faint">·</span>

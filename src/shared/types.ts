@@ -151,6 +151,8 @@ export interface Account {
   /** 0 = off. Separate from pollIntervalS: lead endpoints are metered far more tightly than message ones. */
   signalIntervalS: number;
   lastPolledAt: number | null;
+  /** Last webhook that passed its signature check — including the platform's own URL verification. */
+  lastWebhookAt: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -455,7 +457,7 @@ export interface Stats {
   llmCallsToday: number;
   medianReplySeconds: number | null;
   materials: { campaignId: string; campaignName: string; materialId: string; title: string; shares: number }[];
-  accounts: { id: string; name: string; platform: PlatformId; status: AccountStatus; statusDetail: string; sentToday: number; maxPerDay: number }[];
+  accounts: { id: string; name: string; platform: PlatformId; status: AccountStatus; statusDetail: string; sentToday: number; maxPerDay: number; lastInboundAt: number | null; lastSentAt: number | null }[];
 }
 
 export interface OcrLine {

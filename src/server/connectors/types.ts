@@ -55,6 +55,12 @@ export interface ConnectorContext {
   now(): number;
   log: Logger;
   fetch: typeof fetch;
+  /**
+   * Tell the operator about a degraded-but-working state (a permission the plan lacks, a feature the
+   * platform switched off). Lands on the account card and in the event log — a log line alone is
+   * something nobody reads.
+   */
+  notice(text: string): void;
 }
 
 export interface WebhookRequest {
