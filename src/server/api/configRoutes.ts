@@ -49,6 +49,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
     simPersonas: SIM_PERSONAS,
     webhookBaseUrl: app.config.publicWebhookUrl || `http://127.0.0.1:${app.config.webhookPort}`,
     ocrAvailable: await app.ocr.available(),
+    ocrHint: await app.ocr.describe(),
   }));
 
   server.get('/api/settings', async () => repos.settings.get());

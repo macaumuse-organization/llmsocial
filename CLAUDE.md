@@ -54,7 +54,7 @@ src/server/
   api/          server(鉴权与安全头) chatRoutes configRoutes validators
   queue/        jobs(SQLite 任务队列) schedule(静默时段/节奏)
   secrets/      AES-256-GCM + 钥匙串引用
-  ocr/          vision-ocr.swift(按需编译) parseChat(左右分栏)
+  ocr/          vision-ocr.swift(macOS 按需编译) windows-ocr.ps1(Windows 系统 OCR，纯 ASCII，别往里写中文) parseChat(左右分栏)
 src/web/        React 19 + Vite，hash 路由，无路由库
 skills/         内置技能 Markdown
 tests/          全部测试

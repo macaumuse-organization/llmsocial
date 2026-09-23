@@ -427,7 +427,7 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
   const [rows, setRows] = useState<ParsedChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
-  // 截图识别只有 macOS 有。别让人选完文件才从报错里知道。
+  // 截图识别不是每台机器都有。别让人选完文件才从报错里知道。
   const meta = useAsync(() => api.meta(), []);
   const ocrOff = meta.data ? !meta.data.ocrAvailable : false;
 
@@ -478,9 +478,9 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
       }
     >
       {ocrOff ? (
-        <div className="notice warn">这台机器识别不了截图（本机 OCR 只有 macOS 有）。用下面的「手动添加一条」把聊天内容填进来，一样能起草回复。</div>
+        <div className="notice warn">{meta.data?.ocrHint} 下面的「手动添加一条」照样能把聊天内容填进来。</div>
       ) : (
-        <div className="notice info">截图只在本机用系统自带的 OCR 识别，不会上传到任何服务。识别结果可以逐条改，左右标错了点一下就能换边。</div>
+        <div className="notice info">{meta.data?.ocrHint ?? '截图只在本机识别，不会上传到任何服务'}。识别结果可以逐条改，左右标错了点一下就能换边。</div>
       )}
       <div className="field-row">
         <Field label="导入到哪个账号" hint="只能选人工桥接或沙盒账号。">

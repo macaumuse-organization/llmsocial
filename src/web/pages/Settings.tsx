@@ -3,7 +3,7 @@ import type { Settings } from '../../shared/types.ts';
 import { AsyncButton, Check, Field, Loading, api, useAsync, useToast } from '../ui.tsx';
 
 const OCR_ENGINES: { value: Settings['ocrEngine']; label: string }[] = [
-  { value: 'auto', label: 'auto —— 能用就用，不可用时跳过识别' },
+  { value: 'auto', label: 'auto —— 系统自带（macOS Vision / Windows OCR），能用就用' },
   { value: 'vision', label: 'vision —— 强制使用，不可用时直接报错' },
   { value: 'off', label: 'off —— 关掉截图识别，只手动粘贴文字' },
 ];
@@ -122,7 +122,7 @@ export function SettingsPage() {
                   <hr className="divider" />
                   <Field
                     label="截图识别引擎"
-                    hint="从聊天截图导入记录时用的识别方式。走的是 macOS 自带的 Vision 框架，图片只在本机识别，不会传给任何模型或服务器。"
+                    hint="从聊天截图导入记录时用的识别方式。macOS 走自带的 Vision 框架，Windows 走系统自带的 OCR；两种都只在本机识别，图片不会传给任何模型或服务器。"
                   >
                     <select value={form.ocrEngine} onChange={(e) => set('ocrEngine', e.target.value as Settings['ocrEngine'])} style={{ maxWidth: 360 }}>
                       {OCR_ENGINES.map((o) => (
@@ -133,7 +133,8 @@ export function SettingsPage() {
                     </select>
                   </Field>
                   {meta.error ? <div className="notice warn">读不到本机能力信息（{meta.error}），暂时判断不了截图识别可不可用。</div> : null}
-                  {meta.data && !meta.data.ocrAvailable ? <div className="notice warn">本机 OCR 不可用（需要 macOS 与 Xcode 命令行工具）</div> : null}
+                  {meta.data && !meta.data.ocrAvailable ? <div className="notice warn">{meta.data.ocrHint}</div> : null}
+                  {meta.data && meta.data.ocrAvailable ? <div className="small muted">{meta.data.ocrHint}</div> : null}
                 </div>
               </div>
 

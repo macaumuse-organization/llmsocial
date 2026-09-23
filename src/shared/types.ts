@@ -375,6 +375,8 @@ export interface Meta {
   simPersonas: SimPersona[];
   webhookBaseUrl: string;
   ocrAvailable: boolean;
+  /** One line about this machine's OCR: which engine, or what to install. Server-side so the UI stops guessing per platform. */
+  ocrHint: string;
 }
 
 export interface FunnelRow {

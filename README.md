@@ -20,7 +20,7 @@
 
 需要 Node.js 22.18 或更新版本——22.18 起 Node 才默认直接运行 `.ts`，再早的版本会报 `ERR_UNKNOWN_FILE_EXTENSION`。
 
-macOS、Windows、Linux 都能跑，差别只有两处：截图识别只有 macOS 有（需要 Xcode 命令行工具），其它系统的加密主密钥落在 `data/master.key` 而不是钥匙串。
+macOS、Windows、Linux 都能跑。截图识别 macOS 和 Windows 都有（分别需要 Xcode 命令行工具和 OCR 语言包），Linux 没有；非 macOS 的加密主密钥落在 `data/master.key` 而不是钥匙串。
 
 在仓库目录下：
 
@@ -59,9 +59,13 @@ npm start
 
 ### 截图识别：本机、免费、不联网
 
-截图识别用 macOS 自带的 Vision 框架在本机完成：不花钱、不需要任何 API key、图片不会离开这台电脑，也不会发给任何模型。首次使用时自动编译一个小的 Swift 助手（需要 Xcode 命令行工具），临时文件 0600 且用完即删。「设置」页可选 `auto / vision / off`。
+截图识别用系统自带的能力在本机完成：不花钱、不需要任何 API key、图片不会离开这台电脑，也不会发给任何模型。临时文件 0600 且用完即删。「设置」页可选 `auto / vision / off`，那里也会显示这台机器实际用的是哪个引擎。
 
-只有 macOS 有这一步。Windows 和 Linux 上导入截图会直接告诉你本机 OCR 不可用，手动账号改用「导入文字」，其余功能不受影响。
+| 系统 | 用什么 | 需要准备 |
+|---|---|---|
+| macOS | Vision 框架 | Xcode 命令行工具（`xcode-select --install`），首次使用时自动编译一个小的 Swift 助手 |
+| Windows | 系统自带的 `Windows.Media.Ocr` | 对应语言的 OCR 语言包（设置 → 时间和语言 → 语言和区域 → 中文 → 语言选项 → 光学字符识别）。不用装任何东西，也不联网 |
+| Linux | 无 | 导入截图会直接说明原因，改用粘贴文字 |
 
 识别出的文字会进入对话记录，参与后续回复生成；那一步用的是你自己配置的模型，与 OCR 无关。
 
