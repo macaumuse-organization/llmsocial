@@ -18,10 +18,13 @@
 
 ## 启动
 
-需要 Node.js 22.18 或更新版本。截图识别需要 macOS 和 Xcode 命令行工具。
+需要 Node.js 22.18 或更新版本——22.18 起 Node 才默认直接运行 `.ts`，再早的版本会报 `ERR_UNKNOWN_FILE_EXTENSION`。
+
+macOS、Windows、Linux 都能跑，差别只有两处：截图识别只有 macOS 有（需要 Xcode 命令行工具），其它系统的加密主密钥落在 `data/master.key` 而不是钥匙串。
+
+在仓库目录下：
 
 ```bash
-cd /Users/jamesmiller/project/marketing/llmsocial
 npm install
 npm run dev
 ```
@@ -57,6 +60,8 @@ npm start
 ### 截图识别：本机、免费、不联网
 
 截图识别用 macOS 自带的 Vision 框架在本机完成：不花钱、不需要任何 API key、图片不会离开这台电脑，也不会发给任何模型。首次使用时自动编译一个小的 Swift 助手（需要 Xcode 命令行工具），临时文件 0600 且用完即删。「设置」页可选 `auto / vision / off`。
+
+只有 macOS 有这一步。Windows 和 Linux 上导入截图会直接告诉你本机 OCR 不可用，手动账号改用「导入文字」，其余功能不受影响。
 
 识别出的文字会进入对话记录，参与后续回复生成；那一步用的是你自己配置的模型，与 OCR 无关。
 
@@ -108,7 +113,7 @@ npm start
 - 默认只监听 `127.0.0.1`；webhook 走独立端口，隧道只暴露那个端口。
 - 管理密码 scrypt 存储，会话令牌只存哈希，登录失败限流；首次设密码只允许本机。
 - 写操作要求自定义请求头并校验 Origin，挡 CSRF；Host 白名单挡 DNS 重绑定。
-- 平台凭据 AES-256-GCM 加密，主密钥在 macOS 钥匙串，不在数据库也不在备份里；也可以只存 `keychain:` / `env:` 引用，密钥根本不进数据库，界面只显示引用名。
+- 平台凭据 AES-256-GCM 加密，主密钥不在数据库也不在备份里：macOS 存钥匙串，其它系统存 `data/master.key`（权限位 0600 在 Windows 上是摆设，这台机器上有别的账号就要自己用 ACL 管好这个文件）；也可以只存 `keychain:` / `env:` 引用，密钥根本不进数据库，界面只显示引用名。
 - 发送先标记 `sending` 再发网络请求；结果不确定时绝不自动重发，宁可漏发。
 
 ## 课堂教学
@@ -123,7 +128,7 @@ npm run build    # 构建界面
 npm run backup   # SQLite 一致性备份
 ```
 
-备份不包含钥匙串中的加密主密钥。环境配置见 `.env.example`。
+备份不包含加密主密钥（钥匙串或 `data/master.key`），那份要单独保管：丢了等于所有平台凭据解不开。环境配置见 `.env.example`。
 
 ## 当前状态
 

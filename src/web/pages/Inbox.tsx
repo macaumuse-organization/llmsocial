@@ -427,6 +427,9 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
   const [rows, setRows] = useState<ParsedChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  // 截图识别只有 macOS 有。别让人选完文件才从报错里知道。
+  const meta = useAsync(() => api.meta(), []);
+  const ocrOff = meta.data ? !meta.data.ocrAvailable : false;
 
   const onFile = async (file: File | null | undefined) => {
     if (!file) return;
@@ -474,7 +477,11 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
         </>
       }
     >
-      <div className="notice info">截图只在本机用系统自带的 OCR 识别，不会上传到任何服务。识别结果可以逐条改，左右标错了点一下就能换边。</div>
+      {ocrOff ? (
+        <div className="notice warn">这台机器识别不了截图（本机 OCR 只有 macOS 有）。用下面的「手动添加一条」把聊天内容填进来，一样能起草回复。</div>
+      ) : (
+        <div className="notice info">截图只在本机用系统自带的 OCR 识别，不会上传到任何服务。识别结果可以逐条改，左右标错了点一下就能换边。</div>
+      )}
       <div className="field-row">
         <Field label="导入到哪个账号" hint="只能选人工桥接或沙盒账号。">
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)}>
@@ -493,8 +500,8 @@ function ImportModal({ accounts, initial, onClose, onDone }: { accounts: Account
           <input value={userId} onChange={(e) => setUserId(e.target.value)} />
         </Field>
       </div>
-      <Field label="截图" hint="可以一次选多张，按聊天顺序从上到下。">
-        <input type="file" accept="image/*" multiple disabled={busy} onChange={(e) => Array.from(e.target.files ?? []).reduce<Promise<void>>((p, f) => p.then(() => onFile(f)), Promise.resolve())} />
+      <Field label="截图" hint={ocrOff ? '本机识别不可用，这里选不了。' : '可以一次选多张，按聊天顺序从上到下。'}>
+        <input type="file" accept="image/*" multiple disabled={busy || ocrOff} onChange={(e) => Array.from(e.target.files ?? []).reduce<Promise<void>>((p, f) => p.then(() => onFile(f)), Promise.resolve())} />
       </Field>
       {busy ? <div className="small muted">识别中…</div> : null}
       <div className="stack" style={{ gap: 6 }}>
