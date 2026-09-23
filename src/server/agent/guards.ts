@@ -25,6 +25,27 @@ export function detectOptOut(text: string): boolean {
   return OPT_OUT_PHRASES.some((re) => re.test(text));
 }
 
+/**
+ * Short brush-offs that read like "stop" but are not certain enough to act on. Opting out is
+ * permanent and crosses accounts, so these do not trigger it — they hand the thread to a person,
+ * who decides. Anchored and length-capped on purpose: the same words inside a sentence
+ * (「别发了太大的文件」) mean something else entirely.
+ */
+const OPT_OUT_MAYBE = [
+  /^(别|別|不要|不用|甭)(再)?(发|發|说|說|回|找|联系|聯繫|打扰|打擾)(我)?(了|啦|吧)?$/,
+  /^(停|停下|停止|算了|到此为止|到此為止)$/,
+  /^我?(不需要|不用了|没兴趣|沒興趣|不感兴趣|不感興趣|不想聊|没空|沒空)(了|啦)?$/,
+  /^(别|別)(发|發)(我)?(了|啦)$/,
+  /^\s*(no thanks|not interested|stop it|enough|please stop)\s*[.!]*\s*$/i,
+];
+
+export function maybeOptOut(text: string): boolean {
+  const t = text.trim();
+  // Anything longer than a brush-off is a real message; judge it on content, not on a stray word.
+  if (t.length > 12 || detectOptOut(t)) return false;
+  return OPT_OUT_MAYBE.some((re) => re.test(t));
+}
+
 const RISK_PATTERNS: [RiskFlag, RegExp][] = [
   ['payment', /转账|轉賬|转帐|付款|打钱|打錢|汇款|匯款|收款码|收款碼|银行卡|銀行卡|支付宝|支付寶|微信支付|红包|紅包|定金|订金|押金|paypal|venmo|wire transfer|bank account|credit card|crypto wallet|usdt|比特币|比特幣/i],
   ['verification_code', /验证码|驗證碼|校验码|動態碼|动态码|verification code|\botp\b|security code|2fa code/i],

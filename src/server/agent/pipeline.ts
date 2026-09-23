@@ -11,7 +11,7 @@ import { LlmError } from '../llm/types.ts';
 import { RetryLater, type Job, type JobQueue } from '../queue/jobs.ts';
 import { nextAllowedTime, pacingDelayMs } from '../queue/schedule.ts';
 import { DAY, HOUR, KeyedMutex, MINUTE, errMessage, newId, type Clock, type Logger } from '../util.ts';
-import { HARD_FLAGS, RISK_LABELS, checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, matchMaterials } from './guards.ts';
+import { HARD_FLAGS, RISK_LABELS, checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, matchMaterials, maybeOptOut } from './guards.ts';
 import { LANGUAGE_LABELS, detectLanguage } from './language.ts';
 import { buildReplyPrompt, buildSummaryPrompt, type PromptContext, type Trigger } from './prompt.ts';
 import { ReplyWire, SummaryWire, normalizeReply, normalizeSummary, type ReplyOutput } from './schema.ts';
@@ -198,6 +198,14 @@ export class Pipeline {
       }
       if (detectOptOut(inbound.text)) {
         this.applyOptOut(conversation, account, contact, '关键词', language);
+        return { conversationId: conversation.id, duplicate: false, schedule: false };
+      }
+      if (maybeOptOut(inbound.text) && conversation.state !== 'handoff') {
+        // Not an opt-out — those are permanent and cross-account, so a short brush-off is not
+        // enough. But it is enough to stop: no model call, nothing sent, a person decides.
+        this.supersedeOpen(conversation.id, 'possible opt-out');
+        repos.conversations.update(conversation.id, { state: 'handoff', stateReason: '对方可能在要求停止联系，请确认后决定是否退订' });
+        repos.events.add('maybe_opt_out', { text: inbound.text.slice(0, 60) }, { accountId: account.id, conversationId: conversation.id, level: 'warn' });
         return { conversationId: conversation.id, duplicate: false, schedule: false };
       }
       const hard = detectRisk(inbound.text).filter((f) => HARD_FLAGS.includes(f));

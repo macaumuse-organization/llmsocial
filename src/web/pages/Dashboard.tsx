@@ -5,6 +5,7 @@ import { AsyncButton, Empty, Loading, PLATFORM_LABELS, STAGE_LABELS, api, clockT
 /** Human wording for the event types the engine writes. Unknown types fall back to the raw name. */
 const EVENT_LABELS: Record<string, string> = {
   opt_out: '对方要求停止联系',
+  maybe_opt_out: '对方可能要求停止联系，待确认',
   handoff: '转人工',
   guard_blocked: '回复被安全检查拦下',
   send_failed: '发送失败',

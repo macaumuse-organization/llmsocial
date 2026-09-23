@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, matchMaterials, weightedLength } from '../src/server/agent/guards.ts';
+import { checkOutbound, detectOptOut, detectRisk, fitToPlatform, isValidDisclosure, matchMaterials, maybeOptOut, weightedLength } from '../src/server/agent/guards.ts';
 import type { Material } from '../src/shared/types.ts';
 import { detectLanguage } from '../src/server/agent/language.ts';
 import { parseChatScreenshot } from '../src/server/ocr/parseChat.ts';
@@ -114,6 +114,46 @@ test('素材链接进白名单就能发，屏蔽链接的平台照样拒', () =>
   assert.equal(checkOutbound(['看这个 https://mat.com/v/9'], ctx).code, 'link_not_allowed');
   assert.equal(checkOutbound(['看这个 https://mat.com/v/9'], { ...ctx, allowedLinks: [...ctx.allowedLinks, 'https://mat.com/v/9'] }).ok, true);
   assert.equal(checkOutbound(['看这个 https://mat.com/v/9'], { ...ctx, allowedLinks: [...ctx.allowedLinks, 'https://mat.com/v/9'], linksBlocked: true }).code, 'link_not_allowed');
+});
+
+test('短句brush-off算「可能退订」，但绝不算退订本身', () => {
+  for (const text of ['别发了', '不用了', '停', '我不需要', '没兴趣', '算了', 'no thanks', 'stop it']) {
+    assert.equal(maybeOptOut(text), true, `应判为可能退订：${text}`);
+    // 退订是永久且跨账号的，这些话不够分量自己触发它。
+    assert.equal(detectOptOut(text), false, `不该直接退订：${text}`);
+  }
+  // 带「再」的是强匹配，弱层不该重复报
+  for (const text of ['别再发了', '不要再发我了', 'STOP', 'unsubscribe']) {
+    assert.equal(detectOptOut(text), true, text);
+    assert.equal(maybeOptOut(text), false, `强匹配的不该再报可能：${text}`);
+  }
+  // 原有的六条反例，一条都不能被新层误伤
+  for (const text of ['别发太大的文件', '不要再想了，赶紧睡', '我不想再拖了，今天就做', 'stop by tomorrow?', '这个停止按钮在哪', '我要取消订单']) {
+    assert.equal(maybeOptOut(text), false, `误判成可能退订：${text}`);
+    assert.equal(detectOptOut(text), false, `误判成退订：${text}`);
+  }
+  // 长句里出现同样的词，按内容判断，不按词判断
+  assert.equal(maybeOptOut('不用了，我自己研究一下这个功能怎么开'), false);
+});
+
+test('相似度阈值挡得住模板换词，放得过共用客套话的不同内容', () => {
+  // 全部取自 scripts/measure-similarity.ts 的实测样本。
+  const opener = '你好呀，刚看到你分享的那条视频，讲的东西挺有意思的，想问问你平时都关注这方面吗？';
+  assert.equal(tooSimilarToRecent('你好呀，刚看到你分享的那条视频，讲的东西挺有意思的，想问问你平时都关注这类内容吗？', [opener]), true);
+  assert.equal(tooSimilarToRecent('小王你好，刚看到你分享的那条视频，讲的东西挺有意思的，想问问你平时都关注这方面吗？', [opener]), true);
+
+  // 英文的功能词让基线重叠更高，模板换词仍要拦下
+  const en = 'Hey! Just saw the video you shared and found it really interesting — do you usually follow this kind of thing?';
+  assert.equal(tooSimilarToRecent('Hi Mark! Just saw the video you shared and found it really interesting — do you usually follow this kind of thing?', [en]), true);
+
+  // 0.72 时代漏过的那一条：评论区短回复换两个词（实测 0.429）
+  const reply = '谢谢支持！这条确实花了点心思，后面还会出同系列的';
+  assert.equal(tooSimilarToRecent('谢谢关注！这条确实花了点心思，之后还会出同系列的', [reply]), true, '模板换词漏过去了');
+
+  // 共用客套话但内容真的不同，不能误拦（最坏实测 0.276）
+  assert.equal(tooSimilarToRecent('谢谢支持！这个问题下条视频会讲到，可以蹲一下', [reply]), false);
+  assert.equal(tooSimilarToRecent('Thanks for watching! The lens is a 35mm, nothing fancy.', ['Thanks for watching! More of these coming soon.']), false);
+  assert.equal(tooSimilarToRecent('好的，那我把资料整理一下发你，你看方便什么时候', ['好的，那我先不打扰你了，有需要随时找我']), false);
 });
 
 test('a chat screenshot becomes ordered messages with the right sides', () => {

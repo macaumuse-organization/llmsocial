@@ -31,6 +31,31 @@ test('copilot: a draft waits for approval and nothing is sent until a person app
   assert.equal(h.app.repos.conversations.get(id)!.aiTurns, 1);
 });
 
+test('一句「别发了」不退订，但到此为止：不调模型、不发东西、转人工', async () => {
+  const h = harness();
+  useCampaign(h, { mode: 'autopilot' });
+  const id = h.inbound('你好，刷到你的视频了');
+  await h.tick(10_000);
+  await h.tick(2 * MINUTE);
+  await h.settle();
+  const before = h.app.db.all('SELECT id FROM llm_calls').length;
+  const sentBefore = texts(h, id, 'sent').length;
+
+  h.inbound('别发了');
+  await h.tick(10_000);
+  await h.tick(5 * MINUTE);
+  await h.settle();
+
+  const conversation = h.app.repos.conversations.get(id)!;
+  assert.equal(conversation.state, 'handoff');
+  assert.match(conversation.stateReason, /可能在要求停止联系/);
+  assert.equal(h.app.db.all('SELECT id FROM llm_calls').length, before, '不该再调一次模型');
+  assert.equal(texts(h, id, 'sent').length, sentBefore, '不该再发出任何东西');
+  // 不是退订：联系人没被标记，屏蔽名单也没写。要不要退订由人决定。
+  assert.equal(h.app.repos.contacts.get(conversation.contactId)!.optedOut, false);
+  assert.equal(h.app.repos.suppressions.has('sandbox', 'u1'), false);
+});
+
 test('a burst of messages is answered once', async () => {
   const h = harness();
   const id = h.inbound('在吗');
