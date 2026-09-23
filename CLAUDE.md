@@ -34,7 +34,9 @@ npm run dev     # 本地起服务
 
 改这些之前先问人。它们是这个项目能存在的前提，不是可配置项：
 
-1. **连接器不能有「主动发起联系」的能力**。`Connector` 接口只有 `poll` / `receive` / `send`，`send` 必须针对已存在的会话。不要加 `addFriend`、`follow`、`sendToNewUser`。
+1. **连接器不能有「主动发起联系」的能力**。出站只有 `send`，且必须针对已存在的会话。不要加 `addFriend`、`follow`、`sendToNewUser`。
+   入站只读的方法可以加（`poll` / `receive` / `pollSignals`）：`pollSignals` 只报告对方已经做过的动作（关注、订阅、@提及），不碰对方账号。
+   线索要变成对话必须人点一下，而且随后的开场白一定是草稿——`prepare()` 里 `trigger === 'opener'` 强制 copilot，任务设成 autopilot 也一样。
 2. **autopilot 的 AI 身份披露**。`pipeline.ts` 里第一条自动消息前插入披露，`isValidDisclosure()` 会验证文案真的说了「AI」。不要加「关闭披露」的选项。
 3. **`checkOutbound` 的 `human_claim` 拦截**。AI 自称真人时必须拦下重写。
 4. **硬风险标记停机**（`HARD_FLAGS = self_harm / minor / legal / harassment`）：命中就转人工，**在调用模型之前**。

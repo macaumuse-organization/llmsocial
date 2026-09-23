@@ -13,6 +13,10 @@ import type {
   Persona,
   Provider,
   Settings,
+  Signal,
+  SignalKind,
+  SignalListItem,
+  SignalStatus,
   SimRun,
   Skill,
 } from '../../shared/types.ts';
@@ -432,6 +436,52 @@ export function createRepos(db: Db, clock: Clock) {
     },
   };
 
+  const signals = {
+    map: (r: Row) => hydrate<Signal>(r, {}, [])!,
+    /** INSERT OR IGNORE: polls overlap and webhooks retry, and the same lead must not appear twice. */
+    add(input: { accountId: string; kind: SignalKind; platformUserId: string; displayName?: string; handle?: string; avatarUrl?: string; text?: string; ref: string; ts: number; status?: SignalStatus; conversationId?: string | null }): void {
+      db.run(
+        'INSERT OR IGNORE INTO signals (id, accountId, kind, platformUserId, displayName, handle, avatarUrl, text, ref, status, conversationId, ts, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        newId('sig'), input.accountId, input.kind, input.platformUserId, input.displayName ?? '', input.handle ?? '', input.avatarUrl ?? '', input.text ?? '', input.ref,
+        input.status ?? 'new', input.conversationId ?? null, input.ts, now(), now(),
+      );
+    },
+    get(id: string): Signal | undefined {
+      const r = db.get<Row>('SELECT * FROM signals WHERE id = ?', id);
+      return r ? signals.map(r) : undefined;
+    },
+    list(f: { accountId?: string; status?: SignalStatus; limit?: number } = {}): SignalListItem[] {
+      const where: string[] = [];
+      const params: SqlParam[] = [];
+      if (f.accountId) {
+        where.push('s.accountId = ?');
+        params.push(f.accountId);
+      }
+      if (f.status) {
+        where.push('s.status = ?');
+        params.push(f.status);
+      }
+      return db
+        .all<Row>(
+          `SELECT s.*, a.name AS accountName, a.platform, a.connector FROM signals s JOIN accounts a ON a.id = s.accountId ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY s.ts DESC LIMIT ?`,
+          ...params,
+          Math.min(f.limit ?? 200, 500),
+        )
+        .map((r) => hydrate<SignalListItem>(r, {}, [])!);
+    },
+    countNew(): number {
+      return db.get<{ n: number }>("SELECT COUNT(*) AS n FROM signals WHERE status = 'new'")?.n ?? 0;
+    },
+    setStatus(id: string, status: SignalStatus, conversationId: string | null = null): Signal | undefined {
+      db.update('signals', id, dehydrate({ status, ...(conversationId ? { conversationId } : {}), updatedAt: now() }));
+      return signals.get(id);
+    },
+    /** The moment they message you the lead has served its purpose; stop showing it as new. */
+    markContacted(accountId: string, platformUserId: string, conversationId: string): void {
+      db.run("UPDATE signals SET status = 'contacted', conversationId = ?, updatedAt = ? WHERE accountId = ? AND platformUserId = ? AND status = 'new'", conversationId, now(), accountId, platformUserId);
+    },
+  };
+
   const events = {
     add(type: string, data: Record<string, unknown> = {}, refs: { accountId?: string | null; conversationId?: string | null; messageId?: string | null; level?: EventRow['level'] } = {}): void {
       db.run('INSERT INTO events (ts, type, level, accountId, conversationId, messageId, data) VALUES (?, ?, ?, ?, ?, ?, ?)', now(), type, refs.level ?? 'info', refs.accountId ?? null, refs.conversationId ?? null, refs.messageId ?? null, JSON.stringify(data));
@@ -478,7 +528,7 @@ export function createRepos(db: Db, clock: Clock) {
     },
   };
 
-  return { settings, providers, personas, skills, campaigns, accounts, contacts, suppressions, conversations, messages, events, llmCalls, simRuns };
+  return { settings, providers, personas, skills, campaigns, accounts, contacts, suppressions, conversations, messages, signals, events, llmCalls, simRuns };
 }
 
 export type Repos = ReturnType<typeof createRepos>;

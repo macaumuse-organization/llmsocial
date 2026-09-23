@@ -1,5 +1,5 @@
 import { accessTokenFor } from './oauth.ts';
-import { ConnectorError, type Connector, type ConnectorContext, type InboundMessage } from './types.ts';
+import { ConnectorError, type Connector, type ConnectorContext, type InboundMessage, type InboundSignal } from './types.ts';
 
 const API = 'https://www.googleapis.com/youtube/v3';
 /** Politeness cap: a backlog is drained over several polls instead of one long walk. */
@@ -34,6 +34,11 @@ interface YtThread {
 interface YtListResponse<T> {
   items?: T[];
   nextPageToken?: string;
+}
+
+interface YtSubscription {
+  snippet?: { publishedAt?: string };
+  subscriberSnippet?: { channelId?: string; title?: string; thumbnails?: { default?: { url?: string } } };
 }
 
 const PACIFIC_CLOCK = new Intl.DateTimeFormat('en-US', {
@@ -176,6 +181,7 @@ export const youtubeConnector: Connector = {
     platforms: ['youtube'],
     canSend: true,
     canPoll: true,
+    canSignals: true,
     usesWebhook: false,
     oauth: 'google',
     untestedLive: true,
@@ -258,6 +264,57 @@ export const youtubeConnector: Connector = {
 
     if (newest > since) mergeCursor(ctx, { lastPublishedAt: newest });
     return messages;
+  },
+
+  /**
+   * New subscribers, as leads. `mySubscribers` only returns the ones who made their subscriptions
+   * public, so this under-reports — and there is no publishedAfter filter, so it pages newest-first
+   * until it reaches the watermark. 1 quota unit per call, and the existing youtube.force-ssl scope
+   * already covers it: nobody has to re-authorise.
+   */
+  async pollSignals(ctx) {
+    const token = await accessTokenFor(ctx, 'google');
+    const stored = ctx.getCursor().lastSubscriberAt;
+    const since = typeof stored === 'number' && Number.isFinite(stored) ? stored : ctx.now() - FIRST_POLL_WINDOW_MS;
+
+    const signals: InboundSignal[] = [];
+    let newest = since;
+    let pageToken = '';
+
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const url = new URL(`${API}/subscriptions`);
+      url.searchParams.set('part', 'subscriberSnippet');
+      url.searchParams.set('mySubscribers', 'true');
+      url.searchParams.set('maxResults', '50');
+      if (pageToken) url.searchParams.set('pageToken', pageToken);
+      const data = await ytRequest<YtListResponse<YtSubscription>>(ctx, url.toString(), { token });
+
+      let reachedKnown = false;
+      for (const item of data.items ?? []) {
+        const at = Date.parse(item.snippet?.publishedAt ?? '');
+        const channel = item.subscriberSnippet?.channelId ?? '';
+        if (!Number.isFinite(at) || channel === '') continue;
+        if (at <= since) {
+          reachedKnown = true;
+          break;
+        }
+        newest = Math.max(newest, at);
+        signals.push({
+          kind: 'subscribe',
+          platformUserId: channel,
+          displayName: item.subscriberSnippet?.title ?? '',
+          avatarUrl: item.subscriberSnippet?.thumbnails?.default?.url ?? '',
+          // The subscription time is what makes the lead unique: re-subscribing is a new lead.
+          ref: `sub:${at}`,
+          timestamp: at,
+        });
+      }
+      pageToken = data.nextPageToken ?? '';
+      if (reachedKnown || !pageToken) break;
+    }
+
+    if (newest > since) mergeCursor(ctx, { lastSubscriberAt: newest });
+    return signals.sort((a, b) => a.timestamp - b.timestamp);
   },
 
   async send(ctx, req) {

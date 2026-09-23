@@ -29,6 +29,7 @@ interface FormState {
   maxPerDay: number;
   maxPerContactDay: number;
   pollIntervalS: number;
+  signalIntervalS: number;
 }
 
 function blankForm(platform: PlatformId, connector: ConnectorKind): FormState {
@@ -50,6 +51,7 @@ function blankForm(platform: PlatformId, connector: ConnectorKind): FormState {
     maxPerDay: 200,
     maxPerContactDay: 20,
     pollIntervalS: 120,
+    signalIntervalS: 0,
   };
 }
 
@@ -72,6 +74,7 @@ function formOf(account: Account): FormState {
     maxPerDay: account.maxPerDay,
     maxPerContactDay: account.maxPerContactDay,
     pollIntervalS: account.pollIntervalS,
+    signalIntervalS: account.signalIntervalS,
   };
 }
 
@@ -176,6 +179,7 @@ export function AccountsPage() {
       maxPerDay: form.maxPerDay,
       maxPerContactDay: form.maxPerContactDay,
       pollIntervalS: spec?.canPoll ? form.pollIntervalS : 0,
+      signalIntervalS: spec?.canSignals ? form.signalIntervalS : 0,
     };
 
     if (form.id) await api.updateAccount(form.id, body);
@@ -451,6 +455,15 @@ export function AccountsPage() {
           {formConnector?.canPoll ? (
             <Field label="拉取间隔（秒）" hint="隔多久去平台捞一次新消息。填 0 就不自动拉，只能在账号卡片上点「立即拉取」。">
               <input type="number" min={0} value={form.pollIntervalS} onChange={(e) => set({ pollIntervalS: Number(e.target.value) || 0 })} />
+            </Field>
+          ) : null}
+
+          {formConnector?.canSignals ? (
+            <Field
+              label="线索收集间隔（秒）"
+              hint="隔多久看一眼谁关注/订阅了你，收进「潜在联系人」。默认 0 = 关。这类接口的配额比消息接口紧得多，建议别低于 3600。收集是只读的，不会替你联系任何人。"
+            >
+              <input type="number" min={0} value={form.signalIntervalS} onChange={(e) => set({ signalIntervalS: Number(e.target.value) || 0 })} />
             </Field>
           ) : null}
 

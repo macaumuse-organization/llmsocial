@@ -264,6 +264,7 @@ export const instagramConnector: Connector = {
     platforms: ['instagram'],
     canSend: true,
     canPoll: true,
+    canSignals: false,
     usesWebhook: true,
     oauth: null,
     untestedLive: true,

@@ -98,12 +98,42 @@ export function createApp(opts: AppOptions): App {
     if (account.pollIntervalS > 0) queue.enqueue('poll_account', { accountId: account.id }, { runAt: clock.now() + nextIn, dedupeKey: `poll:${account.id}` });
   }
 
+  /**
+   * Same shape as pollAccount, on its own schedule: lead endpoints are metered far more tightly
+   * than message ones, and turning message polling off should not silently stop lead collection.
+   */
+  async function pollSignals(job: Job): Promise<void> {
+    const accountId = (job.payload as { accountId: string }).accountId;
+    const manual = job.payload.manual === true;
+    const account = repos.accounts.get(accountId);
+    const connector = account && connectors.get(account.connector);
+    if (!account || !connector?.pollSignals || account.status === 'paused' || account.status === 'needs_auth' || (!manual && account.signalIntervalS <= 0)) return;
+    let nextIn = account.signalIntervalS * 1000;
+    try {
+      const signals = await connector.pollSignals(connectors.context(account));
+      for (const signal of signals) pipeline.ingestSignal(account.id, signal);
+    } catch (err) {
+      const e = err instanceof ConnectorError ? err : new ConnectorError('transient', errMessage(err));
+      if (e.code === 'auth') {
+        repos.accounts.update(account.id, { status: 'needs_auth', statusDetail: e.message.slice(0, 200) });
+        repos.events.add('account_needs_auth', { error: e.message.slice(0, 200), source: 'signals' }, { accountId: account.id, level: 'error' });
+        bus.emit({ type: 'account', accountId: account.id });
+        return;
+      }
+      // Leads are not urgent; back off quietly rather than marking the whole account broken.
+      nextIn = Math.min(6 * HOUR, Math.max(e.retryAfterMs ?? 0, nextIn * 2));
+      repos.events.add('signal_poll_failed', { code: e.code, error: e.message.slice(0, 200) }, { accountId: account.id, level: 'warn' });
+    }
+    if (account.signalIntervalS > 0) queue.enqueue('poll_signals', { accountId: account.id }, { runAt: clock.now() + nextIn, dedupeKey: `sigpoll:${account.id}` });
+  }
+
   const worker = new Worker(
     queue,
     {
       generate_reply: (job) => pipeline.handleGenerateJob(job),
       send_message: (job) => pipeline.handleSendJob(job),
       poll_account: pollAccount,
+      poll_signals: pollSignals,
       summarize: (job) => pipeline.summarize((job.payload as { conversationId: string }).conversationId),
       sim_run: (job) => simulator.run((job.payload as { runId: string }).runId),
     },
@@ -112,8 +142,13 @@ export function createApp(opts: AppOptions): App {
 
   function ensurePolling(): void {
     for (const account of repos.accounts.list()) {
-      if ((account.status === 'active' || account.status === 'error') && account.pollIntervalS > 0 && connectors.get(account.connector)?.poll) {
+      const live = account.status === 'active' || account.status === 'error';
+      if (live && account.pollIntervalS > 0 && connectors.get(account.connector)?.poll) {
         queue.enqueue('poll_account', { accountId: account.id }, { dedupeKey: `poll:${account.id}` });
+      }
+      // A different dedupe prefix: ux_jobs_dedupe is global, so `poll:<id>` would swallow one of the two.
+      if (live && account.signalIntervalS > 0 && connectors.get(account.connector)?.pollSignals) {
+        queue.enqueue('poll_signals', { accountId: account.id }, { dedupeKey: `sigpoll:${account.id}` });
       }
     }
   }

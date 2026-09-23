@@ -227,6 +227,7 @@ export const xConnector: Connector = {
     platforms: ['x'],
     canSend: true,
     canPoll: true,
+    canSignals: false,
     usesWebhook: false,
     oauth: 'x',
     untestedLive: true,

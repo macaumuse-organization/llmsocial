@@ -269,4 +269,27 @@ export const MIGRATIONS: string[] = [
   `
   ALTER TABLE campaigns ADD COLUMN materials TEXT NOT NULL DEFAULT '[]';
   `,
+  `
+  CREATE TABLE signals (
+    id TEXT PRIMARY KEY,
+    accountId TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    platformUserId TEXT NOT NULL,
+    displayName TEXT NOT NULL DEFAULT '',
+    handle TEXT NOT NULL DEFAULT '',
+    avatarUrl TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    ref TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'new',
+    conversationId TEXT REFERENCES conversations(id) ON DELETE SET NULL,
+    ts INTEGER NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
+    UNIQUE (accountId, kind, platformUserId, ref)
+  );
+  CREATE INDEX ix_signals_inbox ON signals (status, ts DESC);
+  CREATE INDEX ix_signals_account ON signals (accountId, ts DESC);
+
+  ALTER TABLE accounts ADD COLUMN signalIntervalS INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

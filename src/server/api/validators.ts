@@ -132,6 +132,7 @@ export const AccountInput = z.object({
   maxPerDay: z.number().int().min(0).max(1_000_000).default(200),
   maxPerContactDay: z.number().int().min(0).max(100_000).default(20),
   pollIntervalS: z.number().int().min(0).max(86_400).default(120),
+  signalIntervalS: z.number().int().min(0).max(86_400).default(0),
 });
 
 export const SettingsInput = z

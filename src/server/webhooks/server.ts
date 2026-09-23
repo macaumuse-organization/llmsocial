@@ -29,8 +29,9 @@ export function buildWebhookServer(app: App): FastifyInstance {
     const webhookRequest: WebhookRequest = { method, query, headers, rawBody };
 
     try {
-      const { response, messages } = await connector.handleWebhook(app.connectors.context(account), webhookRequest);
+      const { response, messages, signals } = await connector.handleWebhook(app.connectors.context(account), webhookRequest);
       for (const message of messages.sort((a, b) => a.timestamp - b.timestamp)) app.pipeline.ingest(account.id, message);
+      for (const signal of signals ?? []) app.pipeline.ingestSignal(account.id, signal);
       if (messages.length > 0) app.bus.emit({ type: 'account', accountId: account.id });
       return { ...response, contentType: response.contentType ?? 'text/plain' };
     } catch (err) {

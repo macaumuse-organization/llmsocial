@@ -1,4 +1,4 @@
-import type { ConnectorMeta, ConversationKind } from '../../shared/types.ts';
+import type { ConnectorMeta, ConversationKind, SignalKind } from '../../shared/types.ts';
 import type { AccountRow } from '../db/repos.ts';
 import type { Logger } from '../util.ts';
 
@@ -70,13 +70,31 @@ export interface WebhookResponse {
   contentType?: string;
 }
 
+/**
+ * Something the other person did that is not a message: followed, subscribed, @-mentioned, opened
+ * a chat window. Inbound and read-only — collecting these never touches the other account.
+ */
+export interface InboundSignal {
+  kind: SignalKind;
+  platformUserId: string;
+  displayName?: string;
+  handle?: string;
+  avatarUrl?: string;
+  text?: string;
+  /** Stable per platform event, so re-polling and webhook retries do not duplicate the lead. */
+  ref: string;
+  timestamp: number;
+}
+
 export interface Connector {
   meta: ConnectorMeta;
   test(ctx: ConnectorContext): Promise<{ ok: boolean; detail: string }>;
   poll?(ctx: ConnectorContext): Promise<InboundMessage[]>;
+  /** Read-only. Never sends, never follows back — it only reports what already happened. */
+  pollSignals?(ctx: ConnectorContext): Promise<InboundSignal[]>;
   send?(ctx: ConnectorContext, req: SendRequest): Promise<SendResult>;
   /** Must verify the platform's signature before trusting anything in the body. */
-  handleWebhook?(ctx: ConnectorContext, req: WebhookRequest): Promise<{ response: WebhookResponse; messages: InboundMessage[] }>;
+  handleWebhook?(ctx: ConnectorContext, req: WebhookRequest): Promise<{ response: WebhookResponse; messages: InboundMessage[]; signals?: InboundSignal[] }>;
 }
 
 /** fetch + JSON with the error mapping every REST connector needs. */

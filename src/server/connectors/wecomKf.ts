@@ -226,6 +226,7 @@ export const wecomKfConnector: Connector = {
     platforms: ['wechat'],
     canSend: true,
     canPoll: false,
+    canSignals: false,
     usesWebhook: true,
     oauth: null,
     untestedLive: true,

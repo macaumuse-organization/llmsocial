@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Analysis, Campaign, CompareCandidate, Contact, Conversation, Message, Mode, Persona, RiskFlag, Skill, Stage } from '../../shared/types.ts';
 import { platformProfile } from '../../shared/platforms.ts';
 import type { Bus } from '../bus.ts';
-import { ConnectorError, type InboundMessage } from '../connectors/types.ts';
+import { ConnectorError, type InboundMessage, type InboundSignal } from '../connectors/types.ts';
 import type { ConnectorRegistry } from '../connectors/registry.ts';
 import type { Db } from '../db/index.ts';
 import { DEFAULT_PERSONA_ID, type AccountRow, type Repos } from '../db/repos.ts';
@@ -192,6 +192,9 @@ export class Pipeline {
       }
       repos.conversations.update(conversation.id, patch);
 
+      // They wrote: whatever lead brought them here has done its job.
+      repos.signals.markContacted(account.id, contact.platformUserId, conversation.id);
+
       if (contact.optedOut || repos.suppressions.has(account.platform, contact.platformUserId)) {
         if (conversation.state !== 'opted_out') repos.conversations.update(conversation.id, { state: 'opted_out', stateReason: '对方在屏蔽名单中' });
         return { conversationId: conversation.id, duplicate: false, schedule: false };
@@ -369,6 +372,36 @@ export class Pipeline {
       return last;
     }
     return last!;
+  }
+
+
+  /**
+   * Record a lead. Never starts anything: an operator opens the conversation by hand, and the
+   * opener that follows is a draft either way (prepare() forces copilot for trigger 'opener').
+   */
+  ingestSignal(accountId: string, signal: InboundSignal): void {
+    const { repos, bus } = this.d;
+    const account = repos.accounts.get(accountId);
+    if (!account) return;
+    // Someone who asked to be left alone is not a lead.
+    if (repos.suppressions.has(account.platform, signal.platformUserId)) return;
+    const contact = repos.contacts.upsert(accountId, { platformUserId: signal.platformUserId, displayName: signal.displayName ?? '', handle: signal.handle ?? '', avatarUrl: signal.avatarUrl ?? '' });
+    if (contact.optedOut) return;
+    const existing = repos.conversations.find(accountId, contact.id, 'dm', signal.platformUserId);
+    repos.signals.add({
+      accountId,
+      kind: signal.kind,
+      platformUserId: signal.platformUserId,
+      displayName: signal.displayName ?? contact.displayName,
+      handle: signal.handle ?? contact.handle,
+      avatarUrl: signal.avatarUrl ?? '',
+      text: signal.text ?? '',
+      ref: signal.ref,
+      ts: signal.timestamp,
+      // Already talking to them: keep it for the history, but it is not something to act on.
+      ...(existing ? { status: 'contacted' as const, conversationId: existing.id } : {}),
+    });
+    bus.emit({ type: 'signal', accountId });
   }
 
   /** Returns '' when generation ran, or the reason it was refused — so an operator-triggered call can say so. */

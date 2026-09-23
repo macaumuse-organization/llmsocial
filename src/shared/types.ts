@@ -148,6 +148,8 @@ export interface Account {
   maxPerDay: number;
   maxPerContactDay: number;
   pollIntervalS: number;
+  /** 0 = off. Separate from pollIntervalS: lead endpoints are metered far more tightly than message ones. */
+  signalIntervalS: number;
   lastPolledAt: number | null;
   createdAt: number;
   updatedAt: number;
@@ -353,6 +355,8 @@ export interface ConnectorMeta {
   platforms: PlatformId[];
   canSend: boolean;
   canPoll: boolean;
+  /** Reports leads (follows, subscribes, mentions). Read-only; it does not imply any outbound ability. */
+  canSignals: boolean;
   usesWebhook: boolean;
   oauth: 'google' | 'x' | null;
   /** Not exercised against the live API in this build. */
@@ -379,6 +383,47 @@ export interface ProviderPreset {
   model: string;
   keyHint: string;
 }
+
+export type SignalKind = 'follow' | 'subscribe' | 'mention' | 'enter_session' | 'manual';
+export type SignalStatus = 'new' | 'contacted' | 'ignored';
+
+/**
+ * Something the other person did first — followed, subscribed, @-mentioned, opened a chat window.
+ * Read-only: a signal never starts a conversation by itself. An operator opens one by hand, one
+ * person at a time, and the opener that follows is always a draft (pipeline forces copilot).
+ */
+export interface Signal {
+  id: string;
+  accountId: string;
+  kind: SignalKind;
+  platformUserId: string;
+  displayName: string;
+  handle: string;
+  avatarUrl: string;
+  /** Mention text, or the operator's note on a manually added lead. */
+  text: string;
+  /** Platform-side idempotency key: media id, event id, subscription timestamp… */
+  ref: string;
+  status: SignalStatus;
+  conversationId: string | null;
+  ts: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SignalListItem extends Signal {
+  accountName: string;
+  platform: PlatformId;
+  connector: ConnectorKind;
+}
+
+export const SIGNAL_KIND_LABELS: Record<SignalKind, string> = {
+  follow: '关注了你',
+  subscribe: '订阅了你',
+  mention: '提到了你',
+  enter_session: '打开了聊天窗口',
+  manual: '手动录入',
+};
 
 export interface Meta {
   version: string;
@@ -444,5 +489,6 @@ export type StreamEvent =
   | { type: 'conversation'; conversationId: string }
   | { type: 'account'; accountId: string }
   | { type: 'sim'; runId: string }
+  | { type: 'signal'; accountId: string }
   | { type: 'settings' }
   | { type: 'ping' };

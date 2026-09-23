@@ -1,7 +1,7 @@
 import { parseJson, type Db } from '../db/index.ts';
 import { errMessage, newId, type Clock, type Logger } from '../util.ts';
 
-export type JobType = 'generate_reply' | 'send_message' | 'poll_account' | 'followup_scan' | 'summarize' | 'retention' | 'sim_run';
+export type JobType = 'generate_reply' | 'send_message' | 'poll_account' | 'poll_signals' | 'followup_scan' | 'summarize' | 'retention' | 'sim_run';
 
 export interface Job<P = Record<string, unknown>> {
   id: string;

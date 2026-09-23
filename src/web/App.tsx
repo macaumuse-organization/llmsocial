@@ -4,6 +4,7 @@ import { api, useAsync, useStream, useTheme, useToast, Loading } from './ui.tsx'
 import { Login } from './Login.tsx';
 import { navigate, useRoute } from './route.ts';
 import { InboxPage } from './pages/Inbox.tsx';
+import { LeadsPage } from './pages/Leads.tsx';
 import { AccountsPage } from './pages/Accounts.tsx';
 import { CampaignsPage } from './pages/Campaigns.tsx';
 import { SkillsPage } from './pages/Skills.tsx';
@@ -16,6 +17,7 @@ import { Icon, type IconName } from './Icon.tsx';
 const NAV: { page: string; label: string; icon: IconName }[] = [
   { page: 'inbox', label: '收件箱', icon: 'inbox' },
   { page: 'dashboard', label: '概况', icon: 'dashboard' },
+  { page: 'leads', label: '潜在联系人', icon: 'message' },
   { page: 'accounts', label: '账号', icon: 'accounts' },
   { page: 'campaigns', label: '聊天任务', icon: 'campaigns' },
   { page: 'skills', label: '技能与人设', icon: 'skills' },
@@ -29,11 +31,13 @@ function Shell() {
   const [theme, setTheme] = useTheme();
   const toast = useToast();
   const [needsAction, setNeedsAction] = useState(0);
+  const [newLeads, setNewLeads] = useState(0);
   const settings = useAsync<Settings>(() => api.settings(), []);
 
   const refreshBadge = useCallback(async () => {
     try {
       setNeedsAction((await api.conversations({ needsAction: true, state: undefined })).length);
+      setNewLeads((await api.signals({ status: 'new' })).length);
     } catch {
       // The badge is decoration; a failure here should not interrupt anything.
     }
@@ -44,7 +48,7 @@ function Shell() {
   }, [refreshBadge, route.page]);
 
   useStream((event) => {
-    if (event.type === 'conversation' || event.type === 'account') void refreshBadge();
+    if (event.type === 'conversation' || event.type === 'account' || event.type === 'signal') void refreshBadge();
     if (event.type === 'settings') void settings.reload();
   });
 
@@ -61,7 +65,7 @@ function Shell() {
   };
 
   const Page =
-    { inbox: InboxPage, dashboard: DashboardPage, accounts: AccountsPage, campaigns: CampaignsPage, skills: SkillsPage, models: ModelsPage, sandbox: SandboxPage, settings: SettingsPage }[route.page] ?? InboxPage;
+    { inbox: InboxPage, leads: LeadsPage, dashboard: DashboardPage, accounts: AccountsPage, campaigns: CampaignsPage, skills: SkillsPage, models: ModelsPage, sandbox: SandboxPage, settings: SettingsPage }[route.page] ?? InboxPage;
 
   return (
     <div className="shell">
@@ -75,6 +79,7 @@ function Shell() {
               <Icon name={item.icon} /> <span className="label">{item.label}</span>
             </span>
             {item.page === 'inbox' && needsAction > 0 ? <span className="badge accent">{needsAction}</span> : null}
+            {item.page === 'leads' && newLeads > 0 ? <span className="badge">{newLeads}</span> : null}
           </button>
         ))}
         <div className="sidebar-foot">

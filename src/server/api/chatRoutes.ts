@@ -251,18 +251,70 @@ export function registerChatRoutes(server: FastifyInstance, app: App): void {
     return detail(conversationId);
   });
 
+  /**
+   * One thread, for one person the operator picked. Shared by POST /api/conversations and by
+   * opening a lead — both go through the same suppression check and the same idempotent find.
+   */
+  const openThread = (input: { accountId: string; platformUserId: string; displayName?: string; campaignId?: string | null; kind?: 'dm' | 'comment'; title?: string }) => {
+    const account = repos.accounts.get(input.accountId);
+    if (!account) throw notFound('账号');
+    if (repos.suppressions.has(account.platform, input.platformUserId)) throw new HttpError(400, '这个人已在屏蔽名单里，不能再联系');
+    const campaign = input.campaignId ? repos.campaigns.get(input.campaignId) : null;
+    if (input.campaignId && !campaign) throw notFound('任务');
+    const kind = input.kind ?? 'dm';
+    const contact = repos.contacts.upsert(input.accountId, { platformUserId: input.platformUserId, displayName: input.displayName ?? '' });
+    const existing = repos.conversations.find(input.accountId, contact.id, kind, input.platformUserId);
+    if (existing) return existing;
+    return repos.conversations.create({ accountId: input.accountId, contactId: contact.id, campaignId: campaign?.id ?? null, kind, threadRef: input.platformUserId, title: input.title ?? '', deadlineAt: campaign ? app.clock.now() + campaign.maxDays * 86_400_000 : null });
+  };
+
   /** Start a thread with someone who is already a contact (or whose handle the operator types in). */
   server.post('/api/conversations', async (req) => {
     const body = z.object({ accountId: z.string().min(1).max(80), platformUserId: z.string().min(1).max(200), displayName: z.string().max(100).default(''), campaignId: z.string().max(80).nullable().default(null), kind: z.enum(['dm', 'comment']).default('dm'), title: z.string().max(200).default('') }).parse(req.body);
+    return detail(openThread(body).id);
+  });
+
+  // ---------------------------------------------------------------- leads
+
+  server.get('/api/signals', async (req) => {
+    const q = z.object({ accountId: z.string().max(80).optional(), status: z.enum(['new', 'contacted', 'ignored']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() }).parse(req.query ?? {});
+    return repos.signals.list(q);
+  });
+
+  /** Manually recorded lead, for the platforms with no API: the operator saw it and typed it in. */
+  server.post('/api/signals', async (req) => {
+    const body = z.object({ accountId: z.string().min(1).max(80), platformUserId: z.string().min(1).max(200), displayName: z.string().max(100).default(''), text: z.string().max(500).default('') }).parse(req.body);
     const account = repos.accounts.get(body.accountId);
     if (!account) throw notFound('账号');
     if (repos.suppressions.has(account.platform, body.platformUserId)) throw new HttpError(400, '这个人已在屏蔽名单里，不能再联系');
-    const campaign = body.campaignId ? repos.campaigns.get(body.campaignId) : null;
-    if (body.campaignId && !campaign) throw notFound('任务');
-    const contact = repos.contacts.upsert(body.accountId, { platformUserId: body.platformUserId, displayName: body.displayName });
-    const existing = repos.conversations.find(body.accountId, contact.id, body.kind, body.platformUserId);
-    if (existing) return detail(existing.id);
-    const created = repos.conversations.create({ accountId: body.accountId, contactId: contact.id, campaignId: campaign?.id ?? null, kind: body.kind, threadRef: body.platformUserId, title: body.title, deadlineAt: campaign ? app.clock.now() + campaign.maxDays * 86_400_000 : null });
-    return detail(created.id);
+    pipeline.ingestSignal(body.accountId, { kind: 'manual', platformUserId: body.platformUserId, displayName: body.displayName, text: body.text, ref: `manual:${app.clock.now()}`, timestamp: app.clock.now() });
+    return repos.signals.list({ accountId: body.accountId, limit: 1 })[0] ?? { ok: true };
+  });
+
+  server.patch('/api/signals/:id', async (req) => {
+    const { id } = Id.parse(req.params);
+    const { status } = z.object({ status: z.enum(['new', 'ignored']) }).parse(req.body);
+    if (!repos.signals.get(id)) throw notFound('线索');
+    const updated = repos.signals.setStatus(id, status);
+    app.bus.emit({ type: 'signal', accountId: updated!.accountId });
+    return updated;
+  });
+
+  /**
+   * Open one lead into a conversation. It stops there: no message is generated and nothing is sent.
+   * The operator asks for an opener from the inbox, and that opener is always a draft — prepare()
+   * forces copilot for trigger 'opener', whatever the campaign says.
+   */
+  server.post('/api/signals/:id/open', async (req) => {
+    const { id } = Id.parse(req.params);
+    const { campaignId } = z.object({ campaignId: z.string().max(80).nullable().default(null) }).parse(req.body ?? {});
+    const signal = repos.signals.get(id);
+    if (!signal) throw notFound('线索');
+    const account = repos.accounts.get(signal.accountId);
+    if (!account) throw notFound('账号');
+    const conversation = openThread({ accountId: signal.accountId, platformUserId: signal.platformUserId, displayName: signal.displayName, campaignId: campaignId ?? account.defaultCampaignId });
+    repos.signals.setStatus(id, 'contacted', conversation.id);
+    app.bus.emit({ type: 'signal', accountId: signal.accountId });
+    return detail(conversation.id);
   });
 }
