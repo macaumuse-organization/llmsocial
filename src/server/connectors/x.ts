@@ -236,7 +236,7 @@ export const xConnector: Connector = {
       { key: 'clientSecret', label: 'Client Secret', secret: true, help: 'App type 选 Confidential client 时才有；选 Public client 就留空。' },
     ],
     setupNotes:
-      '1) 在 developer.x.com 建一个 Project + App（App type 选 Web App / Automated App or Bot）。2) User authentication settings 里打开 OAuth 2.0，Type of App 选 Confidential 或 Public client，App permissions 选「Read and write and Direct message」。3) Callback URI 填 http://127.0.0.1:{本机端口}/oauth/callback（端口＝llmsocial 的监听端口），Website URL 随便填一个可访问的地址。4) 授权 scope 固定为 tweet.read tweet.write users.read dm.read dm.write offline.access，少一个私信或发推就会 403。已知限制：私信端点 /2/dm_events 需要 Pro 及以上套餐（Basic 套餐已被移除），套餐不够时本连接器只收提及并在 6 小时内跳过私信；私信只回溯 30 天且没有增量参数；提及时间线最多回溯 7 天、约 800 条；免费/Basic 套餐的发推与发私信配额很低（发私信普遍是 15 分钟 15 条一类的上限），Autopilot 建议放慢轮询。',
+      '1) 在 developer.x.com 建一个 Project + App（App type 选 Web App / Automated App or Bot）。2) User authentication settings 里打开 OAuth 2.0，Type of App 选 Confidential 或 Public client，App permissions 选「Read and write and Direct message」。3) Callback URI 填 http://127.0.0.1:{本机端口}/oauth/callback（端口＝llmsocial 的监听端口），Website URL 随便填一个可访问的地址。4) 授权 scope 固定为 tweet.read tweet.write users.read dm.read dm.write offline.access，少一个私信或发推就会 403。计费：X API 现在按量计费、没有免费额度，旧的 Basic/Pro 月费套餐不再对新开发者开放——读一条帖子 $0.005、读一条私信 $0.01、发一条回复或私信 $0.015（帖子带链接 $0.20），同一条内容在一个 UTC 自然日内重复读取只算一次（docs.x.com/x-api/getting-started/pricing，2026-09-24 查）。先在开发者后台充值并设好花费上限。已知限制：私信接口返回 403 时（应用权限不含私信、授权时没给私信权限、额度用完等）本连接器只收提及并在 6 小时内跳过私信；私信只回溯 30 天且没有增量参数，每次轮询都会重读最近一页，靠「一天内只算一次」兜底；提及时间线最多回溯 7 天、约 800 条；发推和发私信另有频率上限，Autopilot 建议放慢轮询。',
   },
 
   async test(ctx) {
@@ -260,7 +260,7 @@ export const xConnector: Connector = {
         patchCursor(ctx, { dmDisabledUntil: ctx.now() + DM_BACKOFF_MS });
         ctx.log.warn({ accountId: ctx.account.id, connector: 'x' }, 'dm_events forbidden (plan lacks DM access); skipping DMs for 6h');
         // Otherwise this degrades silently to comments-only and looks like "nobody is messaging us".
-        ctx.notice('X 拒绝读取私信（403）：这个开发者应用的层级没有私信权限，私信要 Pro 及以上。评论和提及照常收，私信 6 小时后再试。');
+        ctx.notice('X 拒绝读取私信（403）：看看开发者应用的权限是不是「Read and write and Direct message」（改过权限要重新授权），以及账户里还有没有额度。评论和提及照常收，私信 6 小时后再试。');
       } else {
         throw err;
       }

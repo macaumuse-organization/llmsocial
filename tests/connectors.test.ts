@@ -883,7 +883,7 @@ test('X: 私信 403 不影响提及，并在 6 小时内跳过私信', async () 
   assert.ok((f.cursor().dmDisabledUntil as number) > now);
   // 以前这里只写一行日志，账号看起来就是「没人私信」。现在要让操作者看得见。
   assert.equal(f.notices.length, 1);
-  assert.match(f.notices[0]!, /私信要 Pro/);
+  assert.match(f.notices[0]!, /Read and write and Direct message/);
 
   // Next poll inside the backoff window does not touch the DM endpoint again.
   const second = await xConnector.poll!(f.ctx);
