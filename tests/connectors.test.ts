@@ -721,6 +721,19 @@ test('YouTube: 首次 poll 截断到 24 小时，标注 fromSelf，并推进游�
   assert.equal(again.length, 0);
 });
 
+test('YouTube: 测试连接报出公开视频数；一个视频都没有时提醒帖子下的评论收不到', async () => {
+  const now = Date.UTC(2026, 8, 24, 6, 0, 0);
+  const withVideos = (videoCount: string) => ytFake(now, () => ({ json: { items: [{ id: 'UCself', snippet: { title: '我的频道' }, statistics: { videoCount } }] } }));
+  assert.deepEqual(await youtubeConnector.test(withVideos('3').ctx), { ok: true, detail: '已连接频道「我的频道」，3 个公开视频' });
+  const none = await youtubeConnector.test(withVideos('0').ctx);
+  assert.equal(none.ok, true);
+  assert.match(none.detail, /还没有公开视频/);
+  assert.match(none.detail, /帖子/);
+  // No statistics in the answer: say nothing about videos rather than guess.
+  const bare = ytFake(now, () => ({ json: { items: [{ id: 'UCself', snippet: { title: '我的频道' } }] } }));
+  assert.deepEqual(await youtubeConnector.test(bare.ctx), { ok: true, detail: '已连接频道「我的频道」' });
+});
+
 test('YouTube: poll 最多翻 3 页', async () => {
   const now = Date.UTC(2026, 8, 20, 12, 0, 0);
   const iso = (ms: number): string => new Date(ms).toISOString();

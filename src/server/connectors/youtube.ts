@@ -9,6 +9,8 @@ const FIRST_POLL_WINDOW_MS = 24 * 60 * 60 * 1000;
 interface YtChannel {
   id?: string;
   snippet?: { title?: string };
+  /** Counts public videos only; a string, like every count in this API. */
+  statistics?: { videoCount?: string };
 }
 
 interface YtCommentSnippet {
@@ -134,7 +136,7 @@ function parseTs(value: unknown): number | null {
 }
 
 async function ownChannel(ctx: ConnectorContext, token: string): Promise<YtChannel | null> {
-  const data = await ytRequest<YtListResponse<YtChannel>>(ctx, `${API}/channels?part=snippet&mine=true`, { token });
+  const data = await ytRequest<YtListResponse<YtChannel>>(ctx, `${API}/channels?part=snippet,statistics&mine=true`, { token });
   return data.items?.[0] ?? null;
 }
 
@@ -202,7 +204,7 @@ export const youtubeConnector: Connector = {
       '4）需要的权限范围只有一个：https://www.googleapis.com/auth/youtube.force-ssl，读评论和发回复都靠它。',
       '5）授权的 Google 账号必须已经有 YouTube 频道并完成账号合并，否则发回复会返回 403 ineligibleAccount。',
       '配额：默认每天 10000 单位。拉一页评论（commentThreads.list）1 单位，发一条回复（comments.insert）50 单位，也就是一天最多约 200 条回复。配额在太平洋时间午夜重置，用尽时返回 403 quotaExceeded，llmsocial 会自动等到下一个重置点。',
-      '已知限制：只能读到自己频道视频下的评论，读不到别人频道；列表按顶层评论时间排序，老视频下新冒出来的回复不会重新排到最前，可能要下一轮才抓到；commentThreads 每个话题只带回一部分回复，超长回复串可能漏掉几条；某个账号第一次轮询只取最近 24 小时，更早的历史评论不会灌进来。',
+      '已知限制：只能读到自己频道视频（含 Shorts）下的评论——社区「帖子」下的评论 YouTube 不开放给程序，读不到也回不了；读不到别人频道；被 YouTube 放进「待审核」的评论要先在 YouTube 工作室里批准，程序才看得到；列表按顶层评论时间排序，老视频下新冒出来的回复不会重新排到最前，可能要下一轮才抓到；commentThreads 每个话题只带回一部分回复，超长回复串可能漏掉几条；某个账号第一次轮询只取最近 24 小时，更早的历史评论不会灌进来。',
       'YouTube 对评论回复没有时间窗限制，但视频关闭评论或评论被设为仅限审核后就无法回复。',
     ].join('\n'),
   },
@@ -213,7 +215,11 @@ export const youtubeConnector: Connector = {
       const channel = await ownChannel(ctx, token);
       if (!channel?.id) return { ok: false, detail: '授权成功，但这个 Google 账号名下没有 YouTube 频道' };
       mergeCursor(ctx, { channelId: channel.id });
-      return { ok: true, detail: `已连接频道「${channel.snippet?.title ?? channel.id}」` };
+      const title = channel.snippet?.title ?? channel.id;
+      const videos = Number.parseInt(channel.statistics?.videoCount ?? '', 10);
+      // A channel with only community posts looks connected and silent forever: posts are not in the API.
+      if (videos === 0) return { ok: true, detail: `已连接频道「${title}」，但频道里还没有公开视频。程序只收得到视频（含 Shorts）下的评论，社区「帖子」下的评论 YouTube 不开放给程序` };
+      return { ok: true, detail: `已连接频道「${title}」${Number.isFinite(videos) ? `，${videos} 个公开视频` : ''}` };
     } catch (err) {
       return { ok: false, detail: err instanceof ConnectorError ? `连接失败（${err.code}）：${err.message}` : '连接失败' };
     }
