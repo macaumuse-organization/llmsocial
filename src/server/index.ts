@@ -26,6 +26,18 @@ const url = `http://${isLoopback(config.host) ? '127.0.0.1' : config.host}:${con
 process.stdout.write(`\nllmsocial 已启动\n  管理界面 ${url}${app.auth.isSetup() ? '' : '   ← 第一次打开需要在本机设置密码'}\n`);
 if (needsWebhooks) process.stdout.write(`  平台回调 端口 ${config.webhookPort}${config.publicWebhookUrl ? `（对外 ${config.publicWebhookUrl}）` : '（需要隧道才能被平台访问）'}\n`);
 if (!isLoopback(config.host)) process.stdout.write('  ⚠️  管理界面没有绑定在回环地址上，请确认前面有 TLS 和访问控制\n');
+const proxy = process.env.NODE_USE_ENV_PROXY === '1' ? (process.env.HTTPS_PROXY || process.env.https_proxy || '') : '';
+if (proxy !== '') {
+  // A proxy URL can carry a username and password; the banner shows where traffic goes, never those.
+  let shown = proxy;
+  try {
+    const u = new URL(proxy);
+    shown = `${u.protocol}//${u.host}`;
+  } catch {
+    shown = '（地址格式不对，检查 .env 里的 HTTPS_PROXY）';
+  }
+  process.stdout.write(`  对外请求 经代理 ${shown}（直连：${process.env.NO_PROXY || process.env.no_proxy || '无'}）\n`);
+}
 process.stdout.write('\n');
 
 let closing = false;

@@ -13,6 +13,7 @@ Node 用的是**类型擦除**，不是 TypeScript 编译器。所以：
 - ✅ 只导入类型时必须写 `import type`（`verbatimModuleSyntax` + `erasableSyntaxOnly` 都开着）。
 - `node:sqlite` 的 `DatabaseSync` **不接受 boolean 和 undefined** 作为绑定参数。`Db.run/get/all` 已经统一转换，写新查询时别绕过它们。
 - 前端的 `import './styles.css'` 靠 `src/web/env.d.ts` 里的 `declare module '*.css'`，别删。
+- 服务进程要经 `scripts/serve.ts`（`npm start`）或 `scripts/dev.ts` 启动，别直接 `node src/server/index.ts`：Node 的 fetch 只在**启动那一刻**决定走不走代理（`NODE_USE_ENV_PROXY`），`.env` 里的代理要由启动器在进程启动前放进环境。服务自己读 `.env`、或者用 `--env-file` 都太晚，实测过。
 
 ## 调模型时
 

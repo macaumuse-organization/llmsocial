@@ -67,6 +67,23 @@ function describeError(status: number, parsed: TokenResponse | null): string {
   return `${status}${code ? ` ${code}` : ''}${desc ? `: ${desc}` : ''}`;
 }
 
+/**
+ * A token endpoint that could not be reached at all. On a machine that needs its VPN to reach the
+ * platform, the browser gets through (it uses the system proxy) and the server does not (Node's fetch
+ * never reads it), so the message names the fix rather than just "fetch failed". Only the host and
+ * the network error code go out — never the URL's query or the request.
+ */
+function unreachable(url: string, err: unknown): string {
+  let host = url;
+  try {
+    host = new URL(url).host;
+  } catch {
+    // keep the raw string
+  }
+  const cause = err instanceof Error && err.cause !== null && typeof err.cause === 'object' && 'code' in err.cause ? String(err.cause.code) : err instanceof Error ? err.message : String(err);
+  return `连不上 ${host}（${cause}）。如果这台电脑要开 VPN 或代理才能访问它，在 .env 里填上 HTTPS_PROXY，然后重启 llmsocial（写法见 .env.example）`;
+}
+
 async function postToken(
   kind: OAuthKind,
   p: { clientId: string; clientSecret: string | null; fetch: typeof fetch; now: number; form: Record<string, string>; previousRefreshToken?: string | null },
@@ -87,7 +104,7 @@ async function postToken(
   try {
     res = await p.fetch(url, { method: 'POST', headers, body: form.toString(), signal: AbortSignal.timeout(20_000) });
   } catch (err) {
-    throw new ConnectorError('transient', `token endpoint unreachable: ${err instanceof Error ? err.message : String(err)}`);
+    throw new ConnectorError('transient', unreachable(url, err));
   }
   const text = await res.text();
   let parsed: TokenResponse | null = null;
@@ -171,7 +188,8 @@ async function refreshOnce(ctx: ConnectorContext, kind: OAuthKind): Promise<stri
   if (fresh && storedExpiry(ctx) - ctx.now() > REFRESH_SKEW_MS) return fresh;
 
   const refreshToken = await ctx.getSecret('refreshToken');
-  if (!refreshToken) throw new ConnectorError('auth', '缺少 refresh token，请重新授权该账号');
+  // No access token either means it was never authorised; "re-authorise" would suggest something broke.
+  if (!refreshToken) throw new ConnectorError('auth', fresh ? '缺少 refresh token，请重新授权该账号' : '还没授权：点账号卡片上的「去授权」');
   const clientId = ctx.config.clientId;
   if (!clientId) throw new ConnectorError('auth', '未配置 clientId');
   const clientSecret = await ctx.getSecret('clientSecret');

@@ -989,6 +989,34 @@ test('oauth: 并发两次 accessTokenFor 只触发一次刷新，且轮换后的
   assert.equal(refreshes, 1);
 });
 
+test('oauth: 从没授权过的账号报「还没授权」，不说「重新授权」', async () => {
+  const f = fake({ config: { clientId: 'yt-client-id' }, secrets: { clientSecret: 'yt-client-secret' } });
+  const err = await connectorError(() => accessTokenFor(f.ctx, 'google'));
+  assert.equal(err.code, 'auth');
+  assert.match(err.message, /还没授权/);
+  assert.doesNotMatch(err.message, /重新授权/);
+});
+
+test('oauth: 连不上令牌接口时说清楚是哪台服务器、什么网络错误、下一步怎么办', async () => {
+  const now = Date.UTC(2026, 8, 20, 12, 0, 0);
+  const f = fake({
+    now,
+    config: { clientId: 'yt-client-id' },
+    secrets: { accessToken: 'OLD-ACCESS', refreshToken: 'LEAKY-REFRESH-0123', clientSecret: 'LEAKY-SECRET-0123' },
+    cursor: { tokenExpiresAt: now - 1000 },
+  });
+  // What undici throws when the machine can reach the platform only through a VPN the process does not use.
+  f.ctx.fetch = (async () => {
+    throw Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('Connect Timeout Error'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+  }) as typeof fetch;
+  const err = await connectorError(() => accessTokenFor(f.ctx, 'google'));
+  assert.equal(err.code, 'transient');
+  assert.match(err.message, /oauth2\.googleapis\.com/);
+  assert.match(err.message, /UND_ERR_CONNECT_TIMEOUT/);
+  assert.match(err.message, /HTTPS_PROXY/);
+  assert.ok(!err.message.includes('LEAKY'), '报错里不能带出令牌或密钥');
+});
+
 test('oauth: Google 不回传 refresh_token 时保留旧的；刷新失败映射成 auth', async () => {
   const now = Date.UTC(2026, 8, 20, 12, 0, 0);
   const f = fake({
