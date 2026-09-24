@@ -8,6 +8,7 @@ import type {
   EventRow,
   LlmCall,
   Meta,
+  NetworkTestResult,
   OcrLine,
   ParsedChatMessage,
   Persona,
@@ -90,6 +91,7 @@ export const api = {
 
   meta: () => get<Meta>('/api/meta'),
   settings: () => get<Settings>('/api/settings'),
+  networkTest: () => post<NetworkTestResult[]>('/api/settings/network-test', {}),
   saveSettings: (patchBody: Partial<Settings>) => patch<Settings>('/api/settings', patchBody),
   stats: () => get<Stats>('/api/stats'),
   events: (params: { conversationId?: string; accountId?: string; level?: string; limit?: number } = {}) => get<EventRow[]>(`/api/events${query(params)}`),

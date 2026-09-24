@@ -146,6 +146,20 @@ export const SettingsInput = z
     dailyLlmCallLimit: z.number().int().min(0).max(1_000_000),
     retentionDays: z.number().int().min(0).max(3650),
     ocrEngine: z.enum(['auto', 'vision', 'off']),
+    proxyEnabled: z.boolean(),
+    proxyUrl: z
+      .string()
+      .trim()
+      .max(300)
+      .refine((v) => {
+        if (v === '') return true;
+        try {
+          return ['http:', 'https:'].includes(new URL(v).protocol);
+        } catch {
+          return false;
+        }
+      }, '代理地址要写成 http://地址:端口，比如 http://127.0.0.1:18081'),
+    noProxy: z.string().trim().max(2000),
   })
   .partial();
 

@@ -339,6 +339,12 @@ export interface Settings {
   /** 0 = keep forever. */
   retentionDays: number;
   ocrEngine: 'auto' | 'vision' | 'off';
+  /** Send outbound requests through proxyUrl. Switchable at runtime; no restart. */
+  proxyEnabled: boolean;
+  /** e.g. http://127.0.0.1:18081 — the Windows system proxy address, which Node does not pick up by itself. */
+  proxyUrl: string;
+  /** Comma-separated hosts that always go straight out: this machine and domestic services. */
+  noProxy: string;
 }
 
 export interface FieldSpec {
@@ -426,6 +432,14 @@ export const SIGNAL_KIND_LABELS: Record<SignalKind, string> = {
   enter_session: '打开了聊天窗口',
   manual: '手动录入',
 };
+
+export interface NetworkTestResult {
+  name: string;
+  ok: boolean;
+  ms: number;
+  /** Why it could not connect, in words, with the network error code in brackets; '' when ok. */
+  error: string;
+}
 
 export interface Meta {
   version: string;

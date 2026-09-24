@@ -13,6 +13,7 @@ import type { LlmClientFactory } from './llm/types.ts';
 import { Ocr } from './ocr/index.ts';
 import { JobQueue, Worker, type Job } from './queue/jobs.ts';
 import { SecretStore, type KeychainReader } from './secrets/store.ts';
+import { applyProxy, importProxyFromEnv } from './proxy.ts';
 import { seed } from './seed.ts';
 import { DAY, HOUR, MINUTE, errMessage, systemClock, type Clock, type Logger } from './util.ts';
 
@@ -197,6 +198,10 @@ export function createApp(opts: AppOptions): App {
     log,
     ensurePolling,
     start() {
+      // Before anything polls: a proxy that is on in settings must be in place for the very first request.
+      const imported = importProxyFromEnv(repos.settings.get(), repos.settings.getRaw('proxyUrl') !== null, process.env);
+      if (imported) repos.settings.patch(imported);
+      applyProxy(repos.settings.get());
       pipeline.recoverInterrupted();
       ensurePolling();
       retention();

@@ -1013,7 +1013,7 @@ test('oauth: 连不上令牌接口时说清楚是哪台服务器、什么网络�
   assert.equal(err.code, 'transient');
   assert.match(err.message, /oauth2\.googleapis\.com/);
   assert.match(err.message, /UND_ERR_CONNECT_TIMEOUT/);
-  assert.match(err.message, /HTTPS_PROXY/);
+  assert.match(err.message, /设置 → 网络代理/);
   assert.ok(!err.message.includes('LEAKY'), '报错里不能带出令牌或密钥');
 });
 

@@ -81,7 +81,7 @@ function unreachable(url: string, err: unknown): string {
     // keep the raw string
   }
   const cause = err instanceof Error && err.cause !== null && typeof err.cause === 'object' && 'code' in err.cause ? String(err.cause.code) : err instanceof Error ? err.message : String(err);
-  return `连不上 ${host}（${cause}）。如果这台电脑要开 VPN 或代理才能访问它，在 .env 里填上 HTTPS_PROXY，然后重启 llmsocial（写法见 .env.example）`;
+  return `连不上 ${host}（${cause}）。如果这台电脑要开 VPN 才能访问它：到 llmsocial「设置 → 网络代理」打开「对外请求走代理」、填上代理地址、保存，再试一次（不用重启）`;
 }
 
 async function postToken(

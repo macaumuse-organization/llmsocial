@@ -20,6 +20,7 @@ import type {
   SimRun,
   Skill,
 } from '../../shared/types.ts';
+import { DEFAULT_NO_PROXY } from '../proxy.ts';
 import { newId, type Clock } from '../util.ts';
 import { parseJson, type Db, type SqlParam } from './index.ts';
 
@@ -33,6 +34,9 @@ export const DEFAULT_SETTINGS: Settings = {
   dailyLlmCallLimit: 2000,
   retentionDays: 0,
   ocrEngine: 'auto',
+  proxyEnabled: false,
+  proxyUrl: '',
+  noProxy: DEFAULT_NO_PROXY,
 };
 
 export const DEFAULT_PERSONA_ID = 'persona_default';

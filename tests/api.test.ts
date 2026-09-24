@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import { buildAdminServer } from '../src/server/api/server.ts';
 import { REAL_CONNECTORS } from '../src/server/connectors/index.ts';
+import { applyProxy } from '../src/server/proxy.ts';
 import type { ConversationDetail } from '../src/shared/types.ts';
 import { SANDBOX, harness, testConfig } from './helpers.ts';
 
@@ -332,4 +333,35 @@ test('new build assets are served after startup and missing scripts return 404',
   assert.equal(res.payload, 'console.log("ready")');
   const missing = await server.inject({ method: 'GET', url: '/assets/missing.js', headers: { host: HOST } });
   assert.equal(missing.statusCode, 404);
+});
+
+test('proxy switch: takes effect on save, refuses on-without-address, and a plain resave does not touch the network', async (t) => {
+  const { h, server, c } = await loggedIn();
+  t.after(async () => {
+    applyProxy({ proxyEnabled: false, proxyUrl: '', noProxy: '' });
+    await server.close();
+    await h.app.stop();
+  });
+  const switches = () => h.app.repos.events.list({}).filter((e) => e.type === 'settings_proxy');
+
+  assert.equal((await c.call('PATCH', '/api/settings', { proxyEnabled: true })).statusCode, 400, 'on with no address');
+  for (const bad of ['127.0.0.1:18081', 'socks5://127.0.0.1:1080', 'javascript:alert(1)']) {
+    assert.equal((await c.call('PATCH', '/api/settings', { proxyUrl: bad })).statusCode, 400, bad);
+  }
+  assert.equal(h.app.repos.settings.get().proxyEnabled, false);
+  assert.equal(switches().length, 0);
+
+  const on = await c.call('PATCH', '/api/settings', { proxyEnabled: true, proxyUrl: 'http://user:pw@127.0.0.1:18081' });
+  assert.equal(on.statusCode, 200, on.payload);
+  assert.deepEqual(switches()[0]?.data, { mode: 'proxy', proxy: 'http://127.0.0.1:18081' }, 'logged without the password');
+
+  // The settings page sends every field on every save.
+  assert.equal((await c.call('PATCH', '/api/settings', h.app.repos.settings.get())).statusCode, 200);
+  assert.equal(switches().length, 1, 'unchanged proxy fields must not re-apply');
+
+  // Clearing the address while the switch is still on would leave it on-without-address.
+  assert.equal((await c.call('PATCH', '/api/settings', { proxyUrl: '' })).statusCode, 400);
+  const off = await c.call('PATCH', '/api/settings', { proxyEnabled: false });
+  assert.equal(off.statusCode, 200, off.payload);
+  assert.deepEqual(switches()[0]?.data, { mode: 'direct', proxy: '' });
 });

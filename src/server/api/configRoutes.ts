@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { GOAL_TYPES, PLATFORMS, PROVIDER_PRESETS, SIM_PERSONAS } from '../../shared/platforms.ts';
-import type { Meta } from '../../shared/types.ts';
+import type { Meta, NetworkTestResult } from '../../shared/types.ts';
 import type { App } from '../app.ts';
 import { accountSecretName } from '../connectors/registry.ts';
 import { ConnectorError } from '../connectors/types.ts';
@@ -12,6 +12,7 @@ import { looksLikeRef, parseSecretRef } from '../secrets/store.ts';
 import { parseSkillMarkdown, skillToMarkdown } from '../seed.ts';
 import { buildStats } from '../stats.ts';
 import { errMessage, newId } from '../util.ts';
+import { applyProxy, describeProxy, explainNetworkError } from '../proxy.ts';
 import { HttpError, notFound } from './server.ts';
 import { AccountInput, CampaignInput, PersonaInput, ProviderInput, SettingsInput, SimInput, SkillInput, patchBody } from './validators.ts';
 
@@ -56,10 +57,45 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
 
   server.patch('/api/settings', async (req) => {
     const patch = SettingsInput.parse(req.body);
+    const before = repos.settings.get();
+    // The settings page sends every field on every save; only a real change should switch the network.
+    const touchesProxy =
+      (patch.proxyEnabled !== undefined && patch.proxyEnabled !== before.proxyEnabled) ||
+      (patch.proxyUrl !== undefined && patch.proxyUrl !== before.proxyUrl) ||
+      (patch.noProxy !== undefined && patch.noProxy !== before.noProxy);
+    const merged = { ...before, ...patch };
+    if (merged.proxyEnabled && merged.proxyUrl.trim() === '') throw new HttpError(400, '先填代理地址再打开代理开关');
     const settings = repos.settings.patch(patch);
     if (patch.autopilotPaused !== undefined) repos.events.add('settings_autopilot', { paused: patch.autopilotPaused }, { level: 'warn' });
+    if (touchesProxy) {
+      // Takes effect for the next request; nothing to restart.
+      const mode = applyProxy(settings);
+      repos.events.add('settings_proxy', { mode, proxy: describeProxy(settings) }, { level: 'info' });
+    }
     app.bus.emit({ type: 'settings' });
     return settings;
+  });
+
+  /**
+   * Can this machine reach an overseas platform and a domestic one, with the proxy as it is set right
+   * now? Nothing here needs a key: any HTTP answer at all means the network path works.
+   */
+  server.post('/api/settings/network-test', async (): Promise<NetworkTestResult[]> => {
+    const targets = [
+      { name: 'Google（YouTube 授权用）', url: 'https://oauth2.googleapis.com/' },
+      { name: '阿里云百炼（千问用）', url: 'https://dashscope.aliyuncs.com/' },
+    ];
+    return Promise.all(
+      targets.map(async (t) => {
+        const started = Date.now();
+        try {
+          await fetch(t.url, { method: 'GET', signal: AbortSignal.timeout(8000) });
+          return { name: t.name, ok: true, ms: Date.now() - started, error: '' };
+        } catch (err) {
+          return { name: t.name, ok: false, ms: Date.now() - started, error: explainNetworkError(err, repos.settings.get()) };
+        }
+      }),
+    );
   });
 
   server.get('/api/stats', async () => buildStats(app.db, repos, app.clock));

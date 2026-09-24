@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Settings } from '../../shared/types.ts';
+import type { NetworkTestResult, Settings } from '../../shared/types.ts';
 import { AsyncButton, Check, Field, Loading, api, useAsync, useToast } from '../ui.tsx';
 
 const OCR_ENGINES: { value: Settings['ocrEngine']; label: string }[] = [
@@ -13,6 +13,7 @@ export function SettingsPage() {
   const settings = useAsync(() => api.settings(), []);
   const meta = useAsync(() => api.meta(), []);
   const [form, setForm] = useState<Settings | null>(null);
+  const [netResult, setNetResult] = useState<NetworkTestResult[] | null>(null);
 
   useEffect(() => {
     if (settings.data) setForm(settings.data);
@@ -105,6 +106,43 @@ export function SettingsPage() {
                       <input type="number" min={0} value={form.dailyLlmCallLimit} onChange={(e) => set('dailyLlmCallLimit', Number(e.target.value))} />
                     </Field>
                   </div>
+                </div>
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <h2 className="grow">网络代理</h2>
+                  <span className={form.proxyEnabled ? 'badge accent' : 'badge'}>{settings.data?.proxyEnabled ? '现在：走代理' : '现在：直连'}</span>
+                </div>
+                <div className="stack card-pad">
+                  <Check
+                    checked={form.proxyEnabled}
+                    onChange={(v) => set('proxyEnabled', v)}
+                    label="对外请求走代理"
+                    hint="要开 VPN 才能上 Google、X、Instagram 时打开。保存后立刻生效，不用重启。浏览器能打开 Google 不代表程序能连上：浏览器自动走 Windows 系统代理，程序只认这里。"
+                  />
+                  <Field label="代理地址" hint="Windows「设置 → 网络和 Internet → 代理」里手动代理的地址和端口，写成 http://地址:端口。">
+                    <input value={form.proxyUrl} onChange={(e) => set('proxyUrl', e.target.value)} placeholder="http://127.0.0.1:18081" style={{ maxWidth: 360 }} />
+                  </Field>
+                  <Field label="不走代理的地址" hint="逗号分隔。本机和国内服务放在这里，VPN 关掉时它们照样能用。前面带点表示整个域名，比如 .aliyuncs.com。">
+                    <input value={form.noProxy} onChange={(e) => set('noProxy', e.target.value)} />
+                  </Field>
+                  {form.proxyEnabled && form.proxyUrl.trim() === '' ? <div className="notice warn">打开代理之前先填代理地址，不然保存不了。</div> : null}
+                  <div className="row-tight">
+                    <AsyncButton disabled={dirty} title={dirty ? '测的是已保存的设置，先点右上角保存' : '看看现在能不能连上海外和国内的服务'} onClick={async () => setNetResult(await api.networkTest())}>
+                      测试网络
+                    </AsyncButton>
+                    {dirty ? <span className="small muted">改动保存后才能测</span> : null}
+                  </div>
+                  {netResult ? (
+                    <div className="stack" style={{ gap: 4 }}>
+                      {netResult.map((r) => (
+                        <div key={r.name} className="small">
+                          {r.ok ? `✓ ${r.name}：连得上（${r.ms} ms）` : `✗ ${r.name}：连不上，${r.error}`}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
