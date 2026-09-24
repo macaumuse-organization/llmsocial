@@ -290,10 +290,10 @@ export const instagramConnector: Connector = {
       },
     ],
     setupNotes:
-      '前置条件：Instagram 账号必须是专业号（商家或创作者），并在 Instagram App 内打开「设置 → 消息与故事回复 → 允许访问消息」。\n' +
-      '1）在 Meta 应用后台新建一个「企业」类型应用，产品里添加「Instagram」，并选择「Instagram API 使用 Instagram 登录」（不要选带 Facebook 主页的那一套）。\n' +
-      '2）权限申请：instagram_business_basic（读取账号资料）、instagram_business_manage_messages（读写私信）、instagram_business_manage_comments（读取并回复评论）。上线前需通过应用审核。\n' +
-      '3）令牌：在「API 设置」页把账号授权后生成长期用户令牌，粘贴到上面的「访问令牌」。这里不做 OAuth 跳转，因为 Meta 只接受 HTTPS 回调地址，本地部署给不出。\n' +
+      '前置条件：Instagram 账号必须是专业号（商家或创作者），并在 Instagram App 内打开「设置 → 消息和快拍回复 → 消息控制 → 已连接的工具 → 允许访问消息」。\n' +
+      '1）在 Meta 应用后台新建应用：让选用例就选 Manage messaging & content on Instagram；老版界面选「Other → Business」，再添加产品 Instagram。然后进「API setup with Instagram login」（不要选带 Facebook 主页的那一套）。\n' +
+      '2）权限：instagram_business_basic（读取账号资料）、instagram_business_manage_messages（读写私信）、instagram_business_manage_comments（读取并回复评论）。只收发自己或自己管理的号用 Standard Access 就够，不用过应用审核；给别人的号用才需要 Advanced Access（要审核）。\n' +
+      '3）令牌：先在「App roles → Roles」把专业号加为 Instagram Tester，并在 instagram.com「设置 → 网站权限 → 应用和网站 → 测试者邀请」里接受；再到「API setup with Instagram login → Generate access tokens」添加账号、生成令牌（只显示一次，60 天有效），粘贴到上面的「访问令牌」。这里不做 OAuth 跳转，因为 Meta 只接受 HTTPS 回调地址，本地部署给不出。\n' +
       '4）Webhook（可选，配了就不必频繁轮询）：回调 URL 形如 https://你的域名/webhooks/{账号ID}，必须是公网可达的 HTTPS 地址；校验令牌填上面那一项；订阅字段勾选 messages 和 comments。\n' +
       '已知限制：私信只能在对方最后一次发消息后的 24 小时内回复，超时平台会报错（10/2534022），此时只能人工在 App 里处理；长期令牌 60 天到期，超过 60 天未续期就要重新生成；调用配额超限时平台返回 4 / 17 / 32 / 613。',
   },
