@@ -186,7 +186,8 @@ export const youtubeConnector: Connector = {
     canSignals: true,
     usesWebhook: false,
     oauth: 'google',
-    untestedLive: true,
+    // 2026-09-24: a real channel received comments (video and Short) and posted approved replies.
+    untestedLive: false,
     fields: [
       {
         key: 'clientId',

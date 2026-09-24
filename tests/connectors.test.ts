@@ -1069,11 +1069,13 @@ test('oauth: Google 不回传 refresh_token 时保留旧的；刷新失败映射
 // cross-cutting
 // ---------------------------------------------------------------------------
 
-test('所有连接器: meta 自洽，untestedLive 为 true，setupNotes 非空', () => {
+test('所有连接器: meta 自洽，只有真号跑通过收发的才 untestedLive=false，setupNotes 非空', () => {
   assert.deepEqual(REAL_CONNECTORS.map((c) => c.meta.kind), ['youtube', 'x', 'instagram', 'wechat_oa', 'wecom_kf']);
+  // Each entry needs a real account that received and sent through the connector; say when in the connector.
+  const liveVerified = new Set(['youtube']);
   for (const connector of REAL_CONNECTORS) {
     const { meta } = connector;
-    assert.equal(meta.untestedLive, true, `${meta.kind}.untestedLive`);
+    assert.equal(meta.untestedLive, !liveVerified.has(meta.kind), `${meta.kind}.untestedLive`);
     assert.ok(meta.setupNotes.length > 50, `${meta.kind}.setupNotes 太短`);
     assert.equal(meta.canPoll, typeof connector.poll === 'function', `${meta.kind}.canPoll 与 poll() 不一致`);
     assert.equal(meta.canSend, typeof connector.send === 'function', `${meta.kind}.canSend 与 send() 不一致`);

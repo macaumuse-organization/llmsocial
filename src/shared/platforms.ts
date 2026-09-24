@@ -53,7 +53,7 @@ export const PLATFORMS: PlatformProfile[] = [
     maxLen: { dm: 500, comment: 500 },
     links: { dm: 'ok', comment: 'discouraged' },
     cjkDoubleWidth: false,
-    hint: 'Comments with links are often held for review; prefer “link in the description”.',
+    hint: 'YouTube has no private messages, so keep the whole conversation here in the comments. Comments with links are often held for review; prefer “link in the description”.',
   },
   {
     id: 'sandbox',
