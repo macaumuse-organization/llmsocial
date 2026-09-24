@@ -35,7 +35,7 @@ test('secrets round-trip, are bound to their name, and references resolve', asyn
 });
 
 test('secret references are parsed strictly', () => {
-  assert.deepEqual(parseSecretRef('keychain:fjosky.anthropic.etech'), { kind: 'keychain', service: 'fjosky.anthropic.etech', account: null });
+  assert.deepEqual(parseSecretRef('keychain:llmsocial.anthropic'), { kind: 'keychain', service: 'llmsocial.anthropic', account: null });
   assert.deepEqual(parseSecretRef('env:ANTHROPIC_API_KEY'), { kind: 'env', name: 'ANTHROPIC_API_KEY' });
   assert.equal(parseSecretRef('keychain:a:b:c'), null);
   assert.equal(parseSecretRef('secret:../../etc/passwd'), null);

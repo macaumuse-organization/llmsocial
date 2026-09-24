@@ -91,7 +91,7 @@ export const GOAL_TYPES: { id: GoalType; label: string; hint: string }[] = [
 ];
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
-  { label: 'Claude Opus 5（Anthropic）', kind: 'anthropic', baseUrl: '', model: 'claude-opus-5', keyHint: 'keychain:fjosky.anthropic.etech 或 env:ANTHROPIC_API_KEY；留空则用 SDK 默认凭据' },
+  { label: 'Claude Opus 5（Anthropic）', kind: 'anthropic', baseUrl: '', model: 'claude-opus-5', keyHint: '直接粘贴 sk-ant- 开头的密钥，或者 env:ANTHROPIC_API_KEY；留空就去环境变量 ANTHROPIC_API_KEY 里取' },
   { label: 'Claude Sonnet 5（Anthropic）', kind: 'anthropic', baseUrl: '', model: 'claude-sonnet-5', keyHint: '同上' },
   { label: 'Claude Haiku 4.5（Anthropic）', kind: 'anthropic', baseUrl: '', model: 'claude-haiku-4-5', keyHint: '同上' },
   { label: 'OpenAI', kind: 'openai_compat', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5', keyHint: 'env:OPENAI_API_KEY' },

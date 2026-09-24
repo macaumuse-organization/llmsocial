@@ -169,9 +169,9 @@ test('secrets go in and never come back out', async () => {
   assert.match(list, /"hasApiKey":true/);
 
   // A reference is stored verbatim so the operator can see where the key lives, without holding it.
-  await c.call('PATCH', `/api/providers/${id}`, { apiKey: 'keychain:fjosky.anthropic.etech' });
-  assert.match((await c.call('GET', '/api/providers')).payload, /keychain:fjosky\.anthropic\.etech/);
-  assert.equal(h.app.repos.providers.get(id)!.apiKeyRef, 'keychain:fjosky.anthropic.etech');
+  await c.call('PATCH', `/api/providers/${id}`, { apiKey: 'keychain:llmsocial.anthropic' });
+  assert.match((await c.call('GET', '/api/providers')).payload, /keychain:llmsocial\.anthropic/);
+  assert.equal(h.app.repos.providers.get(id)!.apiKeyRef, 'keychain:llmsocial.anthropic');
 
   // Account secrets behave the same way.
   const account = await c.call('POST', '/api/accounts', {
