@@ -33,7 +33,7 @@ curl.exe --noproxy "*" -s -o NUL -m 2 "%URL%/api/auth/state" >nul 2>nul
 if not errorlevel 1 (
   echo llmsocial 已经在运行：%URL%
   if not defined LLMSOCIAL_NO_BROWSER start "" "%URL%"
-  timeout /t 3 >nul
+  ping -n 4 127.0.0.1 >nul
   exit /b 0
 )
 
@@ -62,7 +62,7 @@ rem Helper window: poll until the server answers, then open the browser once.
 for /l %%i in (1,1,180) do (
   curl.exe --noproxy "*" -s -o NUL -m 2 "%URL%/api/auth/state" >nul 2>nul
   if not errorlevel 1 goto :opened
-  timeout /t 1 /nobreak >nul
+  ping -n 2 127.0.0.1 >nul
 )
 exit /b 1
 :opened
