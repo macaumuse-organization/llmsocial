@@ -205,6 +205,9 @@ export class WechatBridge {
         const reg = await this.run(this.exePath, ['--register', '--quiet'], { timeout: 4 * 60_000 });
         log.push(...outputLines(reg));
         if (!reg.ok) throw new Error(`注册失败：${lastLine(reg) || `退出码 ${reg.code}`}`);
+        // Updating an already registered bridge is handed to a PowerShell that runs after --register has
+        // exited (Windows refuses to update a package that is in use), so the new state lands a moment later.
+        for (let i = 0; i < 10 && (await this.rawStatus()).registeredUpToDate !== true; i++) await new Promise((r) => setTimeout(r, 1500));
         log.push('注册完成。微信要整个退出再打开一次，菜单里才会出现聊天桥。');
       }
 
