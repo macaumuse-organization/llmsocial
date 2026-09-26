@@ -1,3 +1,4 @@
+import type { WechatBridgeInstallResult, WechatBridgeStatus } from '../shared/types.ts';
 import type {
   Account,
   Campaign,
@@ -126,6 +127,8 @@ export const api = {
   testAccount: (id: string) => post<TestResult>(`/api/accounts/${id}/test`),
   pollAccount: (id: string) => post<{ ok: true }>(`/api/accounts/${id}/poll`),
   oauthStart: (id: string) => post<{ url: string; redirectUri: string }>(`/api/accounts/${id}/oauth/start`),
+  bridgeStatus: (id: string) => get<WechatBridgeStatus>(`/api/accounts/${id}/bridge`),
+  bridgeInstall: (id: string, force: boolean) => post<WechatBridgeInstallResult>(`/api/accounts/${id}/bridge/install`, { force }),
 
   conversations: (filters: ConversationFilters = {}) => get<ConversationListItem[]>(`/api/conversations${query({ ...filters, needsAction: filters.needsAction ? '1' : undefined })}`),
   conversation: (id: string) => get<ConversationDetail>(`/api/conversations/${id}`),

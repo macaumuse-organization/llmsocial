@@ -58,6 +58,7 @@ src/server/
   queue/        jobs(SQLite 任务队列) schedule(静默时段/节奏)
   secrets/      AES-256-GCM + 钥匙串引用
   ocr/          vision-ocr.swift(macOS 按需编译) windows-ocr.ps1(Windows 系统 OCR，纯 ASCII，别往里写中文) parseChat(左右分栏)
+  bridge/       wechatBridge(Windows 聊天桥：下载/校验/解压发布包，spawn WeChatBridge.exe --configure/--register/--status --json；密钥走环境变量 CHATBRIDGE_SECRET，不进命令行)
 src/web/        React 19 + Vite，hash 路由，无路由库
 skills/         内置技能 Markdown
 tests/          全部测试

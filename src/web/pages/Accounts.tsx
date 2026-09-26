@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import type { Account, AccountStatus, ConnectorKind, ConnectorMeta, PlatformId } from '../../shared/types.ts';
+import { useCallback, useEffect, useState } from 'react';
+import type { Account, AccountStatus, ConnectorKind, ConnectorMeta, PlatformId, WechatBridgeStatus } from '../../shared/types.ts';
 import { AsyncButton, Confirm, Empty, Field, Loading, Modal, PLATFORM_LABELS, api, timeAgo, useAsync, useStream, useToast } from '../ui.tsx';
 
 const STATUS_BADGE: Record<AccountStatus, { label: string; className: string }> = {
@@ -78,6 +78,86 @@ function formOf(account: Account): FormState {
   };
 }
 
+function isBridgeAccount(form: { platform: PlatformId; connector: ConnectorKind }): boolean {
+  return form.platform === 'wechat' && form.connector === 'webhook';
+}
+
+/** 48 hex characters: nobody types it, the server hands it to the bridge itself. */
+function randomSecret(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The WeChat bridge on this machine, as it relates to one account: install it, wire it, see where it stands. */
+function BridgePanel({ accountId, supported }: { accountId: string; supported: boolean }) {
+  const toast = useToast();
+  const [status, setStatus] = useState<WechatBridgeStatus | null>(null);
+  const [error, setError] = useState('');
+  const [log, setLog] = useState<string[]>([]);
+  const [installing, setInstalling] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setStatus(await api.bridgeStatus(accountId));
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    if (supported) void load();
+  }, [supported, load]);
+
+  if (!supported) {
+    return <div className="notice info">微信个人号在 Windows 上有「聊天桥」：微信里转发聊天记录就进收件箱。这台机器不是 Windows，装不了；这个回调地址只能按通用 Webhook 自己接。</div>;
+  }
+  if (error) return <div className="notice danger">读不到聊天桥状态：{error}</div>;
+  if (!status) return <div className="small muted">正在看聊天桥装没装…</div>;
+
+  const action = !status.installed ? '安装聊天桥' : status.ready ? '重新安装' : status.configured ? '注册到微信菜单' : status.registered ? '连到这个账号' : '安装并连接';
+  const force = status.installed && status.ready;
+
+  async function install() {
+    setInstalling(true);
+    setLog(force ? ['重新下载并安装…'] : ['开始…']);
+    try {
+      const result = await api.bridgeInstall(accountId, force);
+      setLog(result.log);
+      setStatus(result.status);
+      if (result.status.ready) toast.ok('聊天桥就绪。微信要整个退出再打开一次，菜单里才会出现它。');
+      else toast.error(result.status.detail);
+    } catch (err) {
+      setLog((l) => [...l, `失败：${err instanceof Error ? err.message : String(err)}`]);
+      await load();
+      throw err;
+    } finally {
+      setInstalling(false);
+    }
+  }
+
+  return (
+    <div className="stack">
+      <div className="row-tight">
+        <strong>聊天桥</strong>
+        {status.ready ? <span className="badge accent">就绪</span> : status.installed ? <span className="badge warn">没接好</span> : <span className="badge">未安装</span>}
+        {status.version ? <span className="small muted">v{status.version}</span> : null}
+      </div>
+      <div className={`notice ${status.ready ? 'accent' : 'info'}`}>{status.detail}</div>
+      {installing ? <div className="notice info">正在安装……第一次要下载约 100 MB，并且会弹一次管理员确认，点「是」。</div> : null}
+      {log.length > 0 ? <div className="small muted pre-wrap">{log.join('\n')}</div> : null}
+      <div className="row">
+        <AsyncButton className="sm" onClick={install} disabled={installing}>
+          {action}
+        </AsyncButton>
+        <AsyncButton className="sm" onClick={load} disabled={installing}>
+          刷新
+        </AsyncButton>
+        {status.installed ? <span className="small muted">装在 {status.installDir}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 export function AccountsPage() {
   const toast = useToast();
   const { data, error, loading, reload } = useAsync(async () => {
@@ -153,6 +233,12 @@ export function AccountsPage() {
     for (const field of spec?.fields ?? []) {
       const raw = (field.secret ? form.secrets[field.key] : form.config[field.key]) ?? '';
       const value = raw.trim();
+      // The bridge account's secret is only ever read by llmsocial itself (it hands it to the bridge), so
+      // an empty box on a new account gets a random one instead of a "还差密钥" complaint.
+      if (field.secret && field.key === 'sharedSecret' && value === '' && !form.secretsSet[field.key] && isBridgeAccount(form)) {
+        secrets[field.key] = randomSecret();
+        continue;
+      }
       // An empty secret box means "don't touch what's stored", so it is left out entirely.
       if (field.secret) {
         if (value !== '') secrets[field.key] = value;
@@ -288,7 +374,11 @@ export function AccountsPage() {
                           复制
                         </AsyncButton>
                       </div>
-                      <div className="notice info">平台得能访问到这个地址才推得进消息。本地端口默认只在这台机器上听，先用 ngrok、cloudflared 之类的隧道把它暴露成公网地址，再把公网那版填到平台后台。</div>
+                      {account.platform === 'wechat' ? (
+                        <BridgePanel accountId={account.id} supported={meta.wechatBridgeSupported} />
+                      ) : (
+                        <div className="notice info">平台得能访问到这个地址才推得进消息。本地端口默认只在这台机器上听，先用 ngrok、cloudflared 之类的隧道把它暴露成公网地址，再把公网那版填到平台后台。</div>
+                      )}
                     </>
                   ) : null}
 
@@ -396,7 +486,16 @@ export function AccountsPage() {
             <div className="notice info">这个连接方式发不出消息，得由人工去平台上粘贴。所以走它的对话会自动降级成起草模式：AI 只写草稿，不会自动发。</div>
           ) : null}
 
-          {formConnector?.setupNotes ? <div className="notice info pre-wrap">{formConnector.setupNotes}</div> : null}
+          {isBridgeAccount(form) ? (
+            <div className="notice accent">
+              这就是聊天桥的账号：保存后卡片上会出现「安装聊天桥」，一键装到这台电脑并注册进微信的「转发到其他应用」菜单。之后微信里多选消息 → 转发 → 转发到其他应用 → 选择电脑中的应用 → 聊天桥，整段记录就进收件箱。共享密钥可以留空，会自动生成。
+              {meta.wechatBridgeSupported ? '' : '（聊天桥只有 Windows 版，这台机器上装不了。）'}
+            </div>
+          ) : form.platform === 'wechat' && form.connector === 'manual' && meta.wechatBridgeSupported && !form.id ? (
+            <div className="notice info">Windows 上有更省事的做法：连接方式选「通用 Webhook」，保存后一键装聊天桥，微信里转发聊天记录就直接进收件箱，不用截图。</div>
+          ) : null}
+
+          {formConnector?.setupNotes && !isBridgeAccount(form) ? <div className="notice info pre-wrap">{formConnector.setupNotes}</div> : null}
 
           {(formConnector?.fields ?? []).map((field) => (
             <Field key={field.key} label={field.label} hint={field.help}>

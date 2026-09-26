@@ -1,5 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +16,13 @@ export interface Config {
   webDir: string;
   skillsDir: string;
   logLevel: string;
+  /** Where the Windows WeChat bridge is (or gets) installed; registration binds to this path. */
+  wechatBridgeDir: string;
+  /** The bridge release archive, with a .sha256 sidecar next to it. */
+  wechatBridgeUrl: string;
 }
+
+export const DEFAULT_WECHAT_BRIDGE_URL = 'https://github.com/HeLanGouSheng/wechatbridge-win/releases/latest/download/WeChatBridge-win-x64.zip';
 
 function int(value: string | undefined, fallback: number): number {
   const n = Number.parseInt(value ?? '', 10);
@@ -36,6 +43,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webDir: path.join(PROJECT_ROOT, 'dist/web'),
     skillsDir: path.join(PROJECT_ROOT, 'skills'),
     logLevel: env.LOG_LEVEL ?? 'info',
+    wechatBridgeDir: env.LLMSOCIAL_WECHAT_BRIDGE_DIR || path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'WeChatBridge'),
+    wechatBridgeUrl: env.LLMSOCIAL_WECHAT_BRIDGE_URL || DEFAULT_WECHAT_BRIDGE_URL,
   };
 }
 

@@ -11,6 +11,7 @@ import { createRepos, type Repos } from './db/repos.ts';
 import { LlmRouter } from './llm/router.ts';
 import type { LlmClientFactory } from './llm/types.ts';
 import { Ocr } from './ocr/index.ts';
+import { WechatBridge } from './bridge/wechatBridge.ts';
 import { JobQueue, Worker, type Job } from './queue/jobs.ts';
 import { SecretStore, type KeychainReader } from './secrets/store.ts';
 import { applyProxy, importProxyFromEnv } from './proxy.ts';
@@ -27,6 +28,8 @@ export interface AppOptions {
   keychain?: KeychainReader;
   extraConnectors?: Connector[];
   rand?: () => number;
+  /** Tests hand in one with fake download/run; the entry point lets createApp build the real one. */
+  wechatBridge?: WechatBridge;
 }
 
 export interface App {
@@ -43,6 +46,7 @@ export interface App {
   auth: Auth;
   bus: Bus;
   ocr: Ocr;
+  wechatBridge: WechatBridge;
   clock: Clock;
   log: Logger;
   ensurePolling(): void;
@@ -65,6 +69,8 @@ export function createApp(opts: AppOptions): App {
   const simulator = new Simulator({ repos, router, pipeline, bus, clock });
   const auth = new Auth(db, repos, clock);
   const ocr = new Ocr(config.dataDir, log);
+  // The bridge runs on this machine, so it posts to the local port even when a tunnel address is configured.
+  const wechatBridge = opts.wechatBridge ?? new WechatBridge({ installDir: config.wechatBridgeDir, downloadUrl: config.wechatBridgeUrl, webhookBaseUrl: `http://127.0.0.1:${config.webhookPort}`, log, fetch: opts.fetch });
 
   seed(repos, config.skillsDir);
 
@@ -194,6 +200,7 @@ export function createApp(opts: AppOptions): App {
     auth,
     bus,
     ocr,
+    wechatBridge,
     clock,
     log,
     ensurePolling,

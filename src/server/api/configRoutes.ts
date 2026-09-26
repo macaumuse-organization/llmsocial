@@ -51,6 +51,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
     webhookBaseUrl: app.config.publicWebhookUrl || `http://127.0.0.1:${app.config.webhookPort}`,
     ocrAvailable: await app.ocr.available(),
     ocrHint: await app.ocr.describe(),
+    wechatBridgeSupported: app.wechatBridge.supported(),
   }));
 
   server.get('/api/settings', async () => repos.settings.get());
@@ -313,6 +314,37 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
     if (account.status === 'needs_auth') throw new HttpError(400, '请先完成账号授权');
     app.queue.enqueue('poll_account', { accountId: id, manual: true }, { dedupeKey: `poll:${id}`, reschedule: true });
     return { ok: true };
+  });
+
+  // ---------------------------------------------------------------- WeChat bridge (Windows)
+
+  const BridgeInstallInput = z.object({ force: z.boolean().default(false) });
+
+  function bridgeAccount(id: string) {
+    const account = repos.accounts.get(id);
+    if (!account) throw notFound('账号');
+    if (account.platform !== 'wechat' || account.connector !== 'webhook') throw new HttpError(400, '聊天桥只配「微信 + 通用 Webhook」的账号');
+    return account;
+  }
+
+  server.get('/api/accounts/:id/bridge', async (req) => {
+    const { id } = Id.parse(req.params);
+    bridgeAccount(id);
+    return app.wechatBridge.status(id);
+  });
+
+  server.post('/api/accounts/:id/bridge/install', async (req) => {
+    const { id } = Id.parse(req.params);
+    const account = bridgeAccount(id);
+    const { force } = BridgeInstallInput.parse(req.body ?? {});
+    const ref = account.secretRefs.sharedSecret ?? '';
+    const secret = ref ? await app.secrets.resolve(ref) : null;
+    if (!secret) throw new HttpError(400, '这个账号还没有共享密钥：编辑账号，填一个至少 24 个字符的密钥（或留空让它自动生成）');
+    try {
+      return await app.wechatBridge.install(id, secret, { force });
+    } catch (err) {
+      throw new HttpError(500, errMessage(err));
+    }
   });
 
   // ---------------------------------------------------------------- OAuth

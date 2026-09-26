@@ -452,6 +452,29 @@ export interface Meta {
   ocrAvailable: boolean;
   /** One line about this machine's OCR: which engine, or what to install. Server-side so the UI stops guessing per platform. */
   ocrHint: string;
+  /** The WeChat bridge (share target for 微信 Windows 版) can be installed from this server: Windows only. */
+  wechatBridgeSupported: boolean;
+}
+
+/** State of the Windows WeChat bridge as it relates to one account. */
+export interface WechatBridgeStatus {
+  supported: boolean;
+  installed: boolean;
+  version: string;
+  /** Registered in WeChat's "选择电脑中的应用" menu from its current folder, at the current package version. */
+  registered: boolean;
+  /** Its settings point at this account on this llmsocial. */
+  configured: boolean;
+  autoDeliver: boolean;
+  ready: boolean;
+  /** One line for the operator: where things stand, or the next thing to click. */
+  detail: string;
+  installDir: string;
+}
+
+export interface WechatBridgeInstallResult {
+  log: string[];
+  status: WechatBridgeStatus;
 }
 
 export interface FunnelRow {
