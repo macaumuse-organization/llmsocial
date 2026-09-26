@@ -22,7 +22,9 @@
 
 macOS、Windows、Linux 都能跑。截图识别 macOS 和 Windows 都有（分别需要 Xcode 命令行工具和 OCR 语言包），Linux 没有；非 macOS 的加密主密钥落在 `data/master.key` 而不是钥匙串。
 
-在仓库目录下：
+装好 Node.js 之后，一键打开：Windows 双击仓库里的 `一键启动.bat`；macOS / Linux 在终端里 `bash 一键启动.sh`。它会在第一次运行时装依赖、构建界面，起来后自动打开浏览器；已经在运行就只打开浏览器。那个窗口别关，关了服务就停。
+
+手动的话，在仓库目录下：
 
 ```bash
 npm install
