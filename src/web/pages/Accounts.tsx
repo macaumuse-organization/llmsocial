@@ -88,12 +88,13 @@ function randomSecret(): string {
 }
 
 /** The WeChat bridge on this machine, as it relates to one account: install it, wire it, see where it stands. */
-function BridgePanel({ accountId, supported }: { accountId: string; supported: boolean }) {
+function BridgePanel({ accountId, supported, autoInstall = false }: { accountId: string; supported: boolean; autoInstall?: boolean }) {
   const toast = useToast();
   const [status, setStatus] = useState<WechatBridgeStatus | null>(null);
   const [error, setError] = useState('');
   const [log, setLog] = useState<string[]>([]);
   const [installing, setInstalling] = useState(false);
+  const [autoStarted, setAutoStarted] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -104,20 +105,7 @@ function BridgePanel({ accountId, supported }: { accountId: string; supported: b
     }
   }, [accountId]);
 
-  useEffect(() => {
-    if (supported) void load();
-  }, [supported, load]);
-
-  if (!supported) {
-    return <div className="notice info">微信个人号在 Windows 上有「聊天桥」：微信里转发聊天记录就进收件箱。这台机器不是 Windows，装不了；这个回调地址只能按通用 Webhook 自己接。</div>;
-  }
-  if (error) return <div className="notice danger">读不到聊天桥状态：{error}</div>;
-  if (!status) return <div className="small muted">正在看聊天桥装没装…</div>;
-
-  const action = !status.installed ? '安装聊天桥' : status.ready ? '重新安装' : status.configured ? '注册到微信菜单' : status.registered ? '连到这个账号' : '安装并连接';
-  const force = status.installed && status.ready;
-
-  async function install() {
+  async function runInstall(force: boolean) {
     setInstalling(true);
     setLog(force ? ['重新下载并安装…'] : ['开始…']);
     try {
@@ -135,6 +123,27 @@ function BridgePanel({ accountId, supported }: { accountId: string; supported: b
     }
   }
 
+  useEffect(() => {
+    if (supported) void load();
+  }, [supported, load]);
+
+  useEffect(() => {
+    if (!autoInstall || autoStarted || !status || status.ready || installing) return;
+    setAutoStarted(true);
+    void runInstall(false).catch(() => undefined);
+    // runInstall is defined below and only depends on accountId; re-running on its identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoInstall, autoStarted, status, installing]);
+
+  if (!supported) {
+    return <div className="notice info">微信个人号在 Windows 上有「聊天桥」：微信里转发聊天记录就进收件箱。这台机器不是 Windows，装不了；这个回调地址只能按通用 Webhook 自己接。</div>;
+  }
+  if (error) return <div className="notice danger">读不到聊天桥状态：{error}</div>;
+  if (!status) return <div className="small muted">正在看聊天桥装没装…</div>;
+
+  const action = !status.installed ? '安装聊天桥' : status.ready ? '重新安装' : status.configured ? '注册到微信菜单' : status.registered ? '连到这个账号' : '安装并连接';
+  const force = status.installed && status.ready;
+
   return (
     <div className="stack">
       <div className="row-tight">
@@ -146,7 +155,7 @@ function BridgePanel({ accountId, supported }: { accountId: string; supported: b
       {installing ? <div className="notice info">正在安装……第一次要下载约 100 MB，并且会弹一次管理员确认，点「是」。</div> : null}
       {log.length > 0 ? <div className="small muted pre-wrap">{log.join('\n')}</div> : null}
       <div className="row">
-        <AsyncButton className="sm" onClick={install} disabled={installing}>
+        <AsyncButton className="sm" onClick={() => runInstall(force)} disabled={installing}>
           {action}
         </AsyncButton>
         <AsyncButton className="sm" onClick={load} disabled={installing}>
@@ -167,6 +176,8 @@ export function AccountsPage() {
 
   const [form, setForm] = useState<FormState | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
+  /** A just-created bridge account whose install dialog is open. */
+  const [installFor, setInstallFor] = useState<Account | null>(null);
   /** Redirect URI handed back by the last oauthStart, per account. */
   const [redirectUris, setRedirectUris] = useState<Record<string, string>>({});
   useStream((event) => { if (event.type === 'account') void reload(); });
@@ -210,16 +221,26 @@ export function AccountsPage() {
   const formConnector = form ? connectorOf(form.connector) : undefined;
   const platformConnectors = form ? meta.connectors.filter((c) => c.platforms.includes(form.platform)) : [];
 
+  /** The connector a fresh account starts with: on Windows, 微信 means the bridge; elsewhere the first one that fits. */
+  function defaultConnector(platform: PlatformId): ConnectorKind {
+    if (platform === 'wechat' && meta.wechatBridgeSupported) return 'webhook';
+    return meta.connectors.find((c) => c.platforms.includes(platform))?.kind ?? 'manual';
+  }
+
+  /** How a connector reads for the platform at hand: the generic webhook is "聊天桥" when the platform is 微信. */
+  function connectorLabel(connector: ConnectorMeta, platform: PlatformId): string {
+    if (platform === 'wechat' && connector.kind === 'webhook') return meta.wechatBridgeSupported ? '聊天桥（微信里转发进来，推荐）' : '聊天桥（只有 Windows 能装）/ 通用 Webhook';
+    return connector.label;
+  }
+
   function openNew() {
     const platform = meta.platforms[0]?.id ?? 'sandbox';
-    const connector = meta.connectors.find((c) => c.platforms.includes(platform))?.kind ?? 'manual';
-    setForm(blankForm(platform, connector));
+    setForm(blankForm(platform, defaultConnector(platform)));
   }
 
   function changePlatform(platform: PlatformId) {
-    const connector = meta.connectors.find((c) => c.platforms.includes(platform))?.kind;
     // Fields belong to the connector, so switching platforms starts them over.
-    set({ platform, connector: connector ?? 'manual', config: {}, secrets: {} });
+    set({ platform, connector: defaultConnector(platform), config: {}, secrets: {} });
   }
 
   async function save() {
@@ -268,11 +289,16 @@ export function AccountsPage() {
       signalIntervalS: spec?.canSignals ? form.signalIntervalS : 0,
     };
 
-    if (form.id) await api.updateAccount(form.id, body);
-    else await api.createAccount({ ...body, platform: form.platform, connector: form.connector });
+    if (form.id) {
+      await api.updateAccount(form.id, body);
+    } else {
+      const created = await api.createAccount({ ...body, platform: form.platform, connector: form.connector });
+      // The bridge is the whole point of this kind of account: start installing before the user has to look for a button.
+      if (isBridgeAccount(form) && meta.wechatBridgeSupported) setInstallFor(created);
+    }
     await reload();
     setForm(null);
-    toast.ok(form.id ? '账号已更新' : '账号建好了，建议先测一下连接');
+    toast.ok(form.id ? '账号已更新' : isBridgeAccount(form) ? '账号建好了' : '账号建好了，建议先测一下连接');
   }
 
   return (
@@ -469,11 +495,11 @@ export function AccountsPage() {
                 ))}
               </select>
             </Field>
-            <Field label="连接方式" hint={form.id ? '同样不能改。' : formConnector?.description}>
+            <Field label="连接方式" hint={form.id ? '同样不能改。' : isBridgeAccount(form) ? '微信 Windows 版里「转发到其他应用」选聊天桥，那段聊天记录就进收件箱。只进不出：回复还是自己复制到微信发。' : formConnector?.description}>
               <select value={form.connector} disabled={form.id !== null} onChange={(e) => set({ connector: e.target.value as ConnectorKind, config: {}, secrets: {} })}>
                 {platformConnectors.map((c) => (
                   <option key={c.kind} value={c.kind}>
-                    {c.label}
+                    {connectorLabel(c, form.platform)}
                   </option>
                 ))}
               </select>
@@ -488,8 +514,9 @@ export function AccountsPage() {
 
           {isBridgeAccount(form) ? (
             <div className="notice accent">
-              这就是聊天桥的账号：保存后卡片上会出现「安装聊天桥」，一键装到这台电脑并注册进微信的「转发到其他应用」菜单。之后微信里多选消息 → 转发 → 转发到其他应用 → 选择电脑中的应用 → 聊天桥，整段记录就进收件箱。共享密钥可以留空，会自动生成。
-              {meta.wechatBridgeSupported ? '' : '（聊天桥只有 Windows 版，这台机器上装不了。）'}
+              {meta.wechatBridgeSupported
+                ? '保存后马上开始装聊天桥：下载到这台电脑、注册进微信的「转发到其他应用」菜单，第一次会弹一次管理员确认。装好后微信里多选消息 → 转发 → 转发到其他应用 → 选择电脑中的应用 → 聊天桥，整段记录就进收件箱。共享密钥可以留空，会自动生成。'
+                : '聊天桥只有 Windows 版，这台机器上装不了；这个账号只能按通用 Webhook 自己接。'}
             </div>
           ) : form.platform === 'wechat' && form.connector === 'manual' && meta.wechatBridgeSupported && !form.id ? (
             <div className="notice info">Windows 上有更省事的做法：连接方式选「通用 Webhook」，保存后一键装聊天桥，微信里转发聊天记录就直接进收件箱，不用截图。</div>
@@ -589,6 +616,12 @@ export function AccountsPage() {
           ) : null}
 
           <div className="notice info">上面这些上限只管自动消息。你在收件箱里手动发的，一律照发不误。</div>
+        </Modal>
+      ) : null}
+
+      {installFor ? (
+        <Modal title={`安装聊天桥 · ${installFor.name}`} onClose={() => setInstallFor(null)} footer={<button onClick={() => setInstallFor(null)}>关闭</button>}>
+          <BridgePanel accountId={installFor.id} supported={meta.wechatBridgeSupported} autoInstall />
         </Modal>
       ) : null}
 

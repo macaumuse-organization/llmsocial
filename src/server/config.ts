@@ -22,7 +22,13 @@ export interface Config {
   wechatBridgeUrl: string;
 }
 
-export const DEFAULT_WECHAT_BRIDGE_URL = 'https://github.com/HeLanGouSheng/wechatbridge-win/releases/latest/download/WeChatBridge-win-x64.zip';
+/**
+ * The bridge release this llmsocial installs. Pinned, not "latest": a newer bridge may change the
+ * --status --json / --configure contract, so bumping it is a deliberate change here plus a run of the
+ * install test, never something that happens to an old install by itself.
+ */
+export const WECHAT_BRIDGE_RELEASE = 'v0.1.0';
+export const DEFAULT_WECHAT_BRIDGE_URL = `https://github.com/HeLanGouSheng/wechatbridge-win/releases/download/${WECHAT_BRIDGE_RELEASE}/WeChatBridge-win-x64.zip`;
 
 function int(value: string | undefined, fallback: number): number {
   const n = Number.parseInt(value ?? '', 10);
