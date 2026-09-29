@@ -12,6 +12,7 @@ import { LlmRouter } from './llm/router.ts';
 import type { LlmClientFactory } from './llm/types.ts';
 import { Ocr } from './ocr/index.ts';
 import { WechatBridge } from './bridge/wechatBridge.ts';
+import { openFolder } from './maintenance.ts';
 import { JobQueue, Worker, type Job } from './queue/jobs.ts';
 import { SecretStore, type KeychainReader } from './secrets/store.ts';
 import { applyProxy, importProxyFromEnv } from './proxy.ts';
@@ -30,6 +31,8 @@ export interface AppOptions {
   rand?: () => number;
   /** Tests hand in one with fake download/run; the entry point lets createApp build the real one. */
   wechatBridge?: WechatBridge;
+  /** Opens a folder in the file manager; tests replace it so nothing pops up. */
+  openFolder?: (dir: string) => Promise<void>;
 }
 
 export interface App {
@@ -47,6 +50,9 @@ export interface App {
   bus: Bus;
   ocr: Ocr;
   wechatBridge: WechatBridge;
+  /** For the few requests outside connectors (the update check). Late-bound so the proxy switch applies. */
+  fetch: typeof fetch;
+  openFolder: (dir: string) => Promise<void>;
   clock: Clock;
   log: Logger;
   ensurePolling(): void;
@@ -201,6 +207,8 @@ export function createApp(opts: AppOptions): App {
     bus,
     ocr,
     wechatBridge,
+    fetch: opts.fetch ?? ((input, init) => globalThis.fetch(input, init)),
+    openFolder: opts.openFolder ?? ((dir) => openFolder(dir)),
     clock,
     log,
     ensurePolling,

@@ -158,7 +158,7 @@ button.danger { color: var(--danger); border-color: color-mix(in srgb, var(--dan
 button.danger:hover:not(:disabled) { background: var(--danger-soft); }
 button.ghost { border-color: transparent; background: none; color: var(--muted); }
 button.ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
-button.sm { padding: 3px 8px; font-size: 12px; }
+button.sm, .btn.sm { padding: 3px 8px; font-size: 12px; }
 
 input, textarea, select {
   font: inherit; font-size: 13.5px; width: 100%;
@@ -276,7 +276,7 @@ tr:last-child td { border-bottom: 0; }
 /* Layout adapts the conversation and contact panel independently. */
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 button, .btn { min-height: 34px; }
-button.sm { min-height: 28px; }
+button.sm, .btn.sm { min-height: 28px; }
 input, textarea, select { min-width: 0; }
 .card-head, .topbar { flex-wrap: wrap; }
 .card, .stack, .table-wrap { min-width: 0; }

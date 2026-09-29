@@ -32,6 +32,8 @@ node scripts/build-portable.ts   # Windows 免安装版：自带 Node + 只装 d
 
 免安装版的 zip 由 `scripts/zip-writer.ts` 写（UTF-8 文件名 + 标记位），**别换回 Windows 自带的 tar**：它按 GBK 写文件名、不打 UTF-8 标记（繁体、英文 Windows 解压乱码），碰到 GBK 表示不了的名字直接崩（node_modules 里就有 `snow ☃`）。打包自检用 `scripts/explorer-unzip.ps1` 走资源管理器同一套解压，并且先删打包目录再测，别省。免安装版的启动器由 `build-portable.ts` 按字节生成：设置按「环境变量 → app\.env → 免安装默认值」取，数据默认在 `%LOCALAPPDATA%\llmsocial\data`，回调端口默认只听 127.0.0.1（`LLMSOCIAL_WEBHOOK_HOST`）。
 
+发新版：改 `package.json` 的 version（界面和「检查更新」都读它）→ 提交 → `node scripts/build-portable.ts` → GitHub Release 标签 `v<version>`，传 zip 和 .sha256，**发布出来**（草稿对「检查更新」不可见）。
+
 改了 `src/web` 之后要 `npm run build`：`npm start` 只在 dist/web 缺失时才构建，不会自动更新。批处理文件按 `cmd-utf8` 的写法（ASCII 首段 chcp 后嵌套 cmd 重跑自己，中文只放 :main 之后的 echo，不进括号块，CRLF）。
 
 测试用 `tests/helpers.ts` 的 `harness()`：假时钟 + 内存 SQLite + Mock 模型，不联网、结果确定。**多气泡发送之间有 3 秒间隔**，一次 `tick()` 送不完，要用 `h.settle()`。

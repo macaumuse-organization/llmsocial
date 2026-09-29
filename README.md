@@ -145,7 +145,9 @@ npm run build    # 构建界面
 npm run backup   # SQLite 一致性备份
 ```
 
-备份不包含加密主密钥（钥匙串或 `data/master.key`），那份要单独保管：丢了等于所有平台凭据解不开。环境配置见 `.env.example`。
+界面里「设置 → 备份与恢复」做的是同一件事，还能下载备份、打开数据目录，免安装版用户就用它。备份不包含加密主密钥（钥匙串或数据目录里的 `master.key`），那份要单独保管：丢了的话对话和设置还在，但所有平台凭据要重新填。环境配置见 `.env.example`。
+
+「设置 → 版本与更新」里的「检查更新」只在点击时联网，去问 GitHub 上 `macaumuse-organization/llmsocial` 最新发布的版本（`LLMSOCIAL_RELEASES_REPO` 可改）。
 
 ## 当前状态
 

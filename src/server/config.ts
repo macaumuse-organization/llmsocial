@@ -26,7 +26,25 @@ export interface Config {
   wechatBridgeDir: string;
   /** The bridge release archive, with a .sha256 sidecar next to it. */
   wechatBridgeUrl: string;
+  /** owner/name of the GitHub repository whose published releases 检查更新 compares against. */
+  releasesRepo: string;
+  /** Running from the Windows 免安装版: node\node.exe and VERSION.txt sit next to the app folder. */
+  portable: boolean;
 }
+
+function readVersion(): string {
+  try {
+    return (JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8')) as { version?: string }).version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+/** From package.json, so a release is numbered in exactly one place. */
+export const APP_VERSION = readVersion();
+
+/** Where 检查更新 looks. A fork points LLMSOCIAL_RELEASES_REPO at its own repository. */
+export const RELEASES_REPO = 'macaumuse-organization/llmsocial';
 
 /**
  * The bridge release this llmsocial installs. Pinned, not "latest": a newer bridge may change the
@@ -59,6 +77,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: env.LOG_LEVEL ?? 'info',
     wechatBridgeDir: env.LLMSOCIAL_WECHAT_BRIDGE_DIR || path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'WeChatBridge'),
     wechatBridgeUrl: env.LLMSOCIAL_WECHAT_BRIDGE_URL || DEFAULT_WECHAT_BRIDGE_URL,
+    releasesRepo: env.LLMSOCIAL_RELEASES_REPO || RELEASES_REPO,
+    portable: fs.existsSync(path.join(PROJECT_ROOT, '..', 'node', 'node.exe')) && fs.existsSync(path.join(PROJECT_ROOT, '..', 'VERSION.txt')),
   };
 }
 

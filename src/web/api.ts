@@ -1,4 +1,4 @@
-import type { WechatBridgeInstallResult, WechatBridgeStatus } from '../shared/types.ts';
+import type { BackupFile, MaintenanceInfo, UpdateInfo, WechatBridgeInstallResult, WechatBridgeStatus } from '../shared/types.ts';
 import type {
   Account,
   Campaign,
@@ -128,6 +128,11 @@ export const api = {
   pollAccount: (id: string) => post<{ ok: true }>(`/api/accounts/${id}/poll`),
   oauthStart: (id: string) => post<{ url: string; redirectUri: string }>(`/api/accounts/${id}/oauth/start`),
   bridgeStatus: (id: string) => get<WechatBridgeStatus>(`/api/accounts/${id}/bridge`),
+  maintenance: () => get<MaintenanceInfo>('/api/maintenance'),
+  createBackup: () => post<BackupFile>('/api/backups'),
+  backupUrl: (name: string) => `/api/backups/${encodeURIComponent(name)}`,
+  openDataDir: () => post<{ ok: true }>('/api/data/open'),
+  checkUpdate: () => get<UpdateInfo>('/api/update'),
   bridgeInstall: (id: string, force: boolean) => post<WechatBridgeInstallResult>(`/api/accounts/${id}/bridge/install`, { force }),
 
   conversations: (filters: ConversationFilters = {}) => get<ConversationListItem[]>(`/api/conversations${query({ ...filters, needsAction: filters.needsAction ? '1' : undefined })}`),

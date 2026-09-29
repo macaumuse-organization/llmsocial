@@ -1,9 +1,12 @@
 import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { GOAL_TYPES, PLATFORMS, PROVIDER_PRESETS, SIM_PERSONAS } from '../../shared/platforms.ts';
-import type { Meta, NetworkTestResult } from '../../shared/types.ts';
+import type { MaintenanceInfo, Meta, NetworkTestResult, UpdateInfo } from '../../shared/types.ts';
 import type { App } from '../app.ts';
+import { APP_VERSION, isLoopback } from '../config.ts';
 import { accountSecretName } from '../connectors/registry.ts';
 import { ConnectorError } from '../connectors/types.ts';
 import { toAccountDto } from '../db/repos.ts';
@@ -11,6 +14,7 @@ import { isValidTimezone } from '../queue/schedule.ts';
 import { looksLikeRef, parseSecretRef } from '../secrets/store.ts';
 import { parseSkillMarkdown, skillToMarkdown } from '../seed.ts';
 import { buildStats } from '../stats.ts';
+import { BACKUP_NAME, BackupExistsError, backupDir, checkForUpdate, createBackup, listBackups, masterKeyInfo } from '../maintenance.ts';
 import { errMessage, newId } from '../util.ts';
 import { applyProxy, describeProxy, explainNetworkError } from '../proxy.ts';
 import { HttpError, notFound } from './server.ts';
@@ -42,7 +46,7 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
   // ---------------------------------------------------------------- meta & settings
 
   server.get('/api/meta', async (): Promise<Meta> => ({
-    version: '0.1.0',
+    version: APP_VERSION,
     platforms: PLATFORMS,
     connectors: app.connectors.metas(),
     providerPresets: PROVIDER_PRESETS,
@@ -55,6 +59,56 @@ export function registerConfigRoutes(server: FastifyInstance, app: App): void {
   }));
 
   server.get('/api/settings', async () => repos.settings.get());
+
+  // ---------------------------------------------------------------- backups & updates
+  // What someone on the Windows 免安装版 cannot do from a terminal. No secret leaves the server here:
+  // backups hold platform keys only encrypted, and the master key is described, never served.
+
+  server.get('/api/maintenance', async (): Promise<MaintenanceInfo> => ({
+    version: APP_VERSION,
+    portable: app.config.portable,
+    dataDir: app.config.dataDir,
+    dbPath: app.config.dbPath,
+    masterKey: masterKeyInfo(app.config.dataDir, process.env, process.platform),
+    backups: listBackups(app.config.dataDir),
+    canOpenFolder: isLoopback(app.config.host),
+  }));
+
+  server.post('/api/backups', async () => {
+    try {
+      return createBackup(app.db.raw, app.config.dataDir, new Date(app.clock.now()));
+    } catch (err) {
+      if (err instanceof BackupExistsError) throw new HttpError(409, err.message);
+      throw err;
+    }
+  });
+
+  server.get('/api/backups/:name', async (req, reply) => {
+    const { name } = z.object({ name: z.string().regex(BACKUP_NAME, '不是这里生成的备份文件名') }).parse(req.params);
+    const file = path.join(backupDir(app.config.dataDir), name);
+    if (!fs.existsSync(file)) throw notFound('备份');
+    return reply.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; filename="${name}"`).send(fs.createReadStream(file));
+  });
+
+  server.post('/api/data/open', async () => {
+    if (!isLoopback(app.config.host)) throw new HttpError(400, '管理界面不在本机运行，没法替你打开文件夹：按上面的路径去那台机器上找。');
+    fs.mkdirSync(app.config.dataDir, { recursive: true });
+    try {
+      await app.openFolder(app.config.dataDir);
+    } catch (err) {
+      throw new HttpError(400, `打不开文件夹（${errMessage(err)}），按上面的路径自己去找。`);
+    }
+    return { ok: true };
+  });
+
+  // Only when the operator clicks 检查更新: llmsocial never checks by itself.
+  server.get('/api/update', async (): Promise<UpdateInfo> => {
+    try {
+      return await checkForUpdate(app.config.releasesRepo, APP_VERSION, app.fetch);
+    } catch (err) {
+      return { current: APP_VERSION, latest: null, newer: false, url: `https://github.com/${app.config.releasesRepo}/releases`, publishedAt: null, detail: `查不到：${explainNetworkError(err, repos.settings.get())}` };
+    }
+  });
 
   server.patch('/api/settings', async (req) => {
     const patch = SettingsInput.parse(req.body);

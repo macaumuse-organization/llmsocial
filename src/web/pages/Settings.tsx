@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { NetworkTestResult, Settings } from '../../shared/types.ts';
-import { AsyncButton, Check, Field, Loading, api, useAsync, useToast } from '../ui.tsx';
+import type { MaintenanceInfo, NetworkTestResult, Settings, UpdateInfo } from '../../shared/types.ts';
+import { AsyncButton, Check, Field, Loading, api, clockTime, useAsync, useToast } from '../ui.tsx';
 
 const OCR_ENGINES: { value: Settings['ocrEngine']; label: string }[] = [
   { value: 'auto', label: 'auto —— 系统自带（macOS Vision / Windows OCR），能用就用' },
@@ -176,14 +176,14 @@ export function SettingsPage() {
                 </div>
               </div>
 
+              <MaintenanceCards />
+
               <div className="card">
                 <div className="card-head">
                   <h2 className="grow">数据与安全</h2>
                 </div>
                 <div className="stack card-pad small muted">
-                  <p>
-                    所有对话、联系人和模型调用记录都写在本机的 <span className="mono">data/llmsocial.db</span> 里，没有云端副本，删掉文件就等于销毁。
-                  </p>
+                  <p>所有对话、联系人和模型调用记录都写在本机数据目录的数据库里（路径见上面「备份与恢复」），没有云端副本，删掉文件就等于销毁。</p>
                   <p>API 密钥用 AES-256-GCM 加密后才落盘；主密钥优先放 macOS 钥匙串，钥匙串不可用时才退回本地密钥文件。数据库本身没有密钥明文。</p>
                   <p>管理界面只监听回环地址，同一局域网里的其它机器连不上，要远程用请自己套 SSH 隧道，别直接把端口暴露出去。</p>
                   <p>
@@ -204,6 +204,128 @@ export function SettingsPage() {
               </div>
             </>
           )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function formatSize(bytes: number): string {
+  return bytes >= 1e6 ? `${(bytes / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+}
+
+function masterKeyText(info: MaintenanceInfo): string {
+  switch (info.masterKey.kind) {
+    case 'file':
+      return `主密钥在 ${info.masterKey.path}。备份里的平台密钥是加密存的，换电脑时把这个文件和备份一起拷走（它不会变，拷一次就够）。只丢了它的话，对话、任务和设置都还在，只是各平台的密钥要重新填一遍。`;
+    case 'keychain':
+      return '主密钥在 macOS 钥匙串（llmsocial.master-key）。换电脑时在「钥匙串访问」里导出它；不带过去的话，恢复后各平台的密钥要重新填一遍。';
+    case 'env':
+      return '主密钥来自环境变量 LLMSOCIAL_MASTER_KEY。换电脑时把同一个值带过去。';
+    default:
+      return '还没有主密钥文件，下次启动会自动生成。';
+  }
+}
+
+/** Backups and the update check: what someone on the Windows 免安装版 cannot do from a terminal. */
+function MaintenanceCards() {
+  const toast = useToast();
+  const info = useAsync(() => api.maintenance(), []);
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const data = info.data;
+
+  if (info.error) return <div className="notice danger">读不到备份和版本信息：{info.error}</div>;
+  if (!data) return <Loading />;
+
+  return (
+    <>
+      <div className="card">
+        <div className="card-head">
+          <h2 className="grow">备份与恢复</h2>
+        </div>
+        <div className="stack card-pad">
+          <div className="row">
+            <span className="small muted">数据目录</span>
+            <span className="mono grow">{data.dataDir}</span>
+            {data.canOpenFolder ? (
+              <AsyncButton className="sm" onClick={() => api.openDataDir()}>
+                打开
+              </AsyncButton>
+            ) : null}
+          </div>
+          <div className="row">
+            <AsyncButton
+              className="sm primary"
+              onClick={async () => {
+                const made = await api.createBackup();
+                toast.ok(`已备份：${made.name}`);
+                await info.reload();
+              }}
+            >
+              立即备份
+            </AsyncButton>
+            <span className="small muted">备份存在数据目录的 backups 文件夹里；点「下载」可以另存到 U 盘或网盘。</span>
+          </div>
+          {data.backups.length === 0 ? (
+            <div className="small muted">还没有备份。</div>
+          ) : (
+            <div className="stack" style={{ gap: 6 }}>
+              {data.backups.slice(0, 5).map((b) => (
+                <div className="row small" key={b.name}>
+                  <span className="grow">
+                    {clockTime(b.createdAt)} · {formatSize(b.size)}
+                  </span>
+                  <a className="btn sm" href={api.backupUrl(b.name)} download={b.name}>
+                    下载
+                  </a>
+                </div>
+              ))}
+              {data.backups.length > 5 ? <div className="small muted">一共 {data.backups.length} 份，其余的在 backups 文件夹里。</div> : null}
+            </div>
+          )}
+          <div className="notice info">{masterKeyText(data)}</div>
+          <details>
+            <summary className="small">怎么从备份恢复</summary>
+            <ol className="small muted">
+              <li>关掉 llmsocial：关掉黑窗口，或者停掉 npm start。</li>
+              <li>在数据目录里删掉 llmsocial.db、llmsocial.db-wal、llmsocial.db-shm 这三个文件。</li>
+              <li>把备份文件拷进数据目录，改名成 llmsocial.db。</li>
+              <li>换了电脑的话，把原来的 master.key 也放回数据目录。</li>
+              <li>重新启动。</li>
+            </ol>
+          </details>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h2 className="grow">版本与更新</h2>
+        </div>
+        <div className="stack card-pad">
+          <div className="row">
+            <span>当前版本 {data.version}</span>
+            <span className="small muted">{data.portable ? 'Windows 免安装版' : '源码运行'}</span>
+          </div>
+          <div className="row">
+            <AsyncButton className="sm" onClick={async () => setUpdate(await api.checkUpdate())}>
+              检查更新
+            </AsyncButton>
+            <span className="small muted">只有点这个按钮时才会联网问一次 GitHub。</span>
+          </div>
+          {update ? (
+            <div className={`notice ${update.newer ? 'accent' : 'info'}`}>
+              {update.detail}
+              {update.newer ? (
+                <>
+                  {' '}
+                  <a href={update.url} target="_blank" rel="noreferrer">
+                    去下载
+                  </a>
+                  。{data.portable ? '下载新的压缩包，关掉黑窗口，删掉旧的 llmsocial 文件夹，再解压新版；数据不受影响。' : '在仓库目录运行 git pull，再重新启动。'}
+                </>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </>

@@ -477,6 +477,40 @@ export interface WechatBridgeInstallResult {
   status: WechatBridgeStatus;
 }
 
+export interface BackupFile {
+  name: string;
+  size: number;
+  createdAt: number;
+}
+
+/** Where the master key lives. The key itself is never sent to the browser. */
+export interface MasterKeyInfo {
+  kind: 'env' | 'file' | 'keychain' | 'missing';
+  path: string | null;
+}
+
+export interface MaintenanceInfo {
+  version: string;
+  /** Running from the Windows 免安装版 (bundled node.exe) rather than a source checkout. */
+  portable: boolean;
+  dataDir: string;
+  dbPath: string;
+  masterKey: MasterKeyInfo;
+  backups: BackupFile[];
+  /** Opening the file manager only makes sense when llmsocial runs on the machine the browser is on. */
+  canOpenFolder: boolean;
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  newer: boolean;
+  url: string;
+  publishedAt: string | null;
+  /** One line for the operator: up to date, what is new, or why the check did not work. */
+  detail: string;
+}
+
 export interface FunnelRow {
   campaignId: string | null;
   campaignName: string;
