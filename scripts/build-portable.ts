@@ -355,7 +355,21 @@ async function selfTest(archive: string, expectedFiles: string[]): Promise<void>
     const page = await get(`http://127.0.0.1:${SMOKE_PORT}/`);
     if (page?.status !== 200 || !page.text.includes('<script')) fail('界面没打包进去（首页不是构建后的页面）');
     if (!fs.existsSync(path.join(dataDir, 'master.key'))) fail(`数据没写到指定目录 ${dataDir}`);
-    process.stdout.write(`  接口要求设密码、回调端口只听 ${bound.join('、')}、界面在、数据写进了指定目录。\n`);
+
+    // Log in the way the browser does, then check what only the packaged copy can prove: it knows it is
+    // the 免安装版 (the settings page picks the upgrade instructions from that), and a backup works
+    // with the bundled Node's SQLite.
+    const api = `http://127.0.0.1:${SMOKE_PORT}/api`;
+    const setup = await fetch(`${api}/auth/setup`, { method: 'POST', headers: { 'x-llmsocial': '1', 'content-type': 'application/json' }, body: JSON.stringify({ password: randomBytes(12).toString('hex') }) });
+    const cookie = setup.headers.get('set-cookie')?.split(';')[0];
+    if (!setup.ok || !cookie) fail(`设置管理密码失败：HTTP ${setup.status}`);
+    const info = (await (await fetch(`${api}/maintenance`, { headers: { cookie } })).json()) as { portable?: boolean; dataDir?: string };
+    if (info.portable !== true) fail('解压出来的副本没认出自己是免安装版，设置页的升级说明会给错');
+    if (path.resolve(info.dataDir ?? '') !== path.resolve(dataDir)) fail(`数据目录不对：${info.dataDir}`);
+    const backup = await fetch(`${api}/backups`, { method: 'POST', headers: { cookie, 'x-llmsocial': '1' } });
+    const made = (await backup.json()) as { name?: string };
+    if (!backup.ok || !made.name || !fs.existsSync(path.join(dataDir, 'backups', made.name))) fail(`备份没做成：HTTP ${backup.status}`);
+    process.stdout.write(`  接口要求设密码、回调端口只听 ${bound.join('、')}、界面在、数据写进了指定目录、认出是免安装版、备份能做。\n`);
     passed = true;
   } finally {
     if (child?.pid) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true });
