@@ -10,6 +10,12 @@ export interface Config {
   host: string;
   port: number;
   webhookPort: number;
+  /**
+   * Where the webhook port listens. 0.0.0.0 by default so a bridge on another machine can post in; the
+   * Windows 免安装版 launcher sets 127.0.0.1, which keeps Windows Firewall from asking about node.exe
+   * (a tunnel on this machine and the WeChat bridge both connect over loopback anyway).
+   */
+  webhookHost: string;
   publicWebhookUrl: string;
   dataDir: string;
   dbPath: string;
@@ -38,11 +44,13 @@ function int(value: string | undefined, fallback: number): number {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const envFile = path.join(PROJECT_ROOT, '.env');
   if (env === process.env && fs.existsSync(envFile)) process.loadEnvFile(envFile);
-  const dataDir = path.resolve(PROJECT_ROOT, env.LLMSOCIAL_DATA_DIR ?? 'data');
+  // `||`, not `??`: an empty line in .env must mean the default, not the project root (data dir) or every interface (host).
+  const dataDir = path.resolve(PROJECT_ROOT, env.LLMSOCIAL_DATA_DIR || 'data');
   return {
-    host: env.LLMSOCIAL_HOST ?? '127.0.0.1',
+    host: env.LLMSOCIAL_HOST || '127.0.0.1',
     port: int(env.LLMSOCIAL_PORT, 8787),
     webhookPort: int(env.LLMSOCIAL_WEBHOOK_PORT, 8788),
+    webhookHost: env.LLMSOCIAL_WEBHOOK_HOST || '0.0.0.0',
     publicWebhookUrl: (env.LLMSOCIAL_PUBLIC_WEBHOOK_URL ?? '').replace(/\/+$/, ''),
     dataDir,
     dbPath: path.join(dataDir, 'llmsocial.db'),

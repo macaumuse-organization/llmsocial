@@ -8,6 +8,22 @@ import { describeProxy } from './proxy.ts';
 import { loadMasterKey } from './secrets/store.ts';
 import { errMessage } from './util.ts';
 
+/**
+ * A port somebody else holds (or one Windows has reserved, which shows up as EACCES) is the most
+ * common way a first start fails; say so in words instead of a stack trace in the black window.
+ */
+async function listen(server: { listen(opts: { host: string; port: number }): Promise<unknown> }, host: string, port: number, envName: string): Promise<void> {
+  try {
+    await server.listen({ host, port });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EADDRINUSE' && code !== 'EACCES') throw err;
+    const why = code === 'EADDRINUSE' ? '被别的程序占着（也可能是已经开着一个 llmsocial）' : '被 Windows 保留了或者没有权限';
+    process.stderr.write(`\n端口 ${port} 用不了：${why}。在 .env（免安装版是 app\\.env）里写一行 ${envName}=${port + 10} 换个端口，再启动。\n`);
+    process.exit(1);
+  }
+}
+
 const config = loadConfig();
 const log = createLogger(config.logLevel);
 
@@ -19,9 +35,9 @@ const webhooks = buildWebhookServer(app);
 
 app.start();
 
-await admin.listen({ host: config.host, port: config.port });
+await listen(admin, config.host, config.port, 'LLMSOCIAL_PORT');
 const needsWebhooks = app.connectors.metas().some((m) => m.usesWebhook);
-if (needsWebhooks) await webhooks.listen({ host: '0.0.0.0', port: config.webhookPort });
+if (needsWebhooks) await listen(webhooks, config.webhookHost, config.webhookPort, 'LLMSOCIAL_WEBHOOK_PORT');
 
 const url = `http://${isLoopback(config.host) ? '127.0.0.1' : config.host}:${config.port}`;
 process.stdout.write(`\nllmsocial 已启动\n  管理界面 ${url}${app.auth.isSetup() ? '' : '   ← 第一次打开需要在本机设置密码'}\n`);

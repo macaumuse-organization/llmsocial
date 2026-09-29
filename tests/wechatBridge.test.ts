@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import type { FastifyInstance } from 'fastify';
 import { buildAdminServer } from '../src/server/api/server.ts';
 import { BRIDGE_EXE, WechatBridge, type RunResult } from '../src/server/bridge/wechatBridge.ts';
@@ -16,9 +16,17 @@ const BASE = 'http://127.0.0.1:8788';
 const ZIP = Buffer.from('not really a zip, the fake extractor does not care');
 const ZIP_SHA = createHash('sha256').update(ZIP).digest('hex');
 
+const made: string[] = [];
+
 function tempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'llmsocial-bridge-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'llmsocial-bridge-'));
+  made.push(dir);
+  return dir;
 }
+
+after(() => {
+  for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 /** A stand-in for WeChatBridge.exe: remembers every call and answers --status --json from `state`. */
 function fakeBridge(dir: string, over: { shaText?: string; zipStatus?: number; state?: Record<string, unknown>; registerOk?: boolean } = {}) {

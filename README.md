@@ -22,7 +22,11 @@
 
 macOS、Windows、Linux 都能跑。截图识别 macOS 和 Windows 都有（分别需要 Xcode 命令行工具和 OCR 语言包），Linux 没有；非 macOS 的加密主密钥落在 `data/master.key` 而不是钥匙串。
 
-装好 Node.js 之后，一键打开：Windows 双击仓库里的 `一键启动.bat`；macOS / Linux 在终端里 `bash 一键启动.sh`。它会在第一次运行时装依赖、构建界面，起来后自动打开浏览器；已经在运行就只打开浏览器。那个窗口别关，关了服务就停。
+**不想装任何东西（Windows）**：拿一份免安装版 `llmsocial-win-x64.zip`（自带 Node 运行时和构建好的界面），右键「全部解压缩」，双击里面的 `一键启动.bat`。数据放在 `%LOCALAPPDATA%\llmsocial\data`，升级就是换文件夹；回调端口只听本机，不会弹防火墙询问；包里的 `先看我.txt` 写了升级、卸载和改端口。
+
+打这个包：在 Windows 上 `node scripts/build-portable.ts`，产物在 `dist/`。它会删掉打包目录，用资源管理器同一套解压把压缩包解到带中文和空格的路径，新开控制台跑解出来的启动器，查接口、回调端口和界面；最后一行是「全过：可以发布」才算数。
+
+**从源码跑**：装好 Node.js 之后，Windows 双击仓库里的 `一键启动.bat`；macOS / Linux 在终端里 `bash 一键启动.sh`。它会在第一次运行时装依赖、构建界面，起来后自动打开浏览器；已经在运行就只打开浏览器。那个窗口别关，关了服务就停。
 
 手动的话，在仓库目录下：
 

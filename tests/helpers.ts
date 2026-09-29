@@ -9,7 +9,7 @@ import type { Campaign, Provider } from '../src/shared/types.ts';
 
 export function testConfig(): Config {
   const dataDir = path.join(os.tmpdir(), `llmsocial-test-${process.pid}`);
-  return { host: '127.0.0.1', port: 0, webhookPort: 0, publicWebhookUrl: '', dataDir, dbPath: ':memory:', webDir: path.join(PROJECT_ROOT, 'dist/web'), skillsDir: path.join(PROJECT_ROOT, 'skills'), logLevel: 'silent', wechatBridgeDir: path.join(dataDir, 'bridge'), wechatBridgeUrl: 'http://127.0.0.1:9/WeChatBridge-win-x64.zip' };
+  return { host: '127.0.0.1', port: 0, webhookPort: 0, webhookHost: '127.0.0.1', publicWebhookUrl: '', dataDir, dbPath: ':memory:', webDir: path.join(PROJECT_ROOT, 'dist/web'), skillsDir: path.join(PROJECT_ROOT, 'skills'), logLevel: 'silent', wechatBridgeDir: path.join(dataDir, 'bridge'), wechatBridgeUrl: 'http://127.0.0.1:9/WeChatBridge-win-x64.zip' };
 }
 
 export interface Harness {
